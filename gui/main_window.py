@@ -81,6 +81,10 @@ class MainWindow:
         }
         self.converter = DocConverter(compression_settings)
         
+        # Налаштування FileHandler
+        max_file_size = self.config.get('conversion.max_file_size_mb', 100)
+        FileHandler.set_max_file_size(max_file_size)
+        
         # ThreadPool
         max_workers = self._calculate_optimal_workers()
         self.logger.info(f"Ініціалізація ThreadPool з {max_workers} worker(s)")
@@ -315,6 +319,11 @@ class MainWindow:
                 'enable_compression': self.config.get('conversion.enable_compression', False),
                 'compression_level': self.config.get('conversion.compression_level', 6)
             }
+        
+        # Оновлення максимального розміру файлу
+        if 'max_file_size_mb' in settings:
+            FileHandler.set_max_file_size(settings['max_file_size_mb'])
+            self.logger.info(f"📏 Максимальний розмір файлу оновлено: {settings['max_file_size_mb']} МБ")
     
     def _on_theme_toggle(self, new_theme: str):
         """Перемикання теми.
@@ -358,7 +367,7 @@ class MainWindow:
                 fg_color=self.theme_manager.get_color("info")
             )
             self.control_panel.btn_settings.configure(
-                fg_color=self.theme_manager.get_color("bg_tertiary")
+                fg_color=self.theme_manager.get_color("settings")
             )
     
     def _on_convert(self):
@@ -445,6 +454,18 @@ class MainWindow:
             # Конвертація
             auto_number = self.config.get("conversion.auto_number_files", False)
             output_path = FileHandler.get_output_path(file_path, self.output_folder, auto_number=auto_number)
+            
+            # Перевірка існування файлу (тільки якщо не auto_number)
+            if not auto_number and output_path.exists():
+                ask_overwrite = self.config.get("conversion.ask_overwrite", True)
+                if ask_overwrite:
+                    # Пропускаємо файл, якщо він вже існує
+                    self.root.after(0, lambda idx=i: self.file_list.update_status(idx, "⚠️ Файл існує"))
+                    self.root.after(0, lambda idx=i: self.file_list.hide_progress(idx))
+                    self.logger.warning(f"Файл вже існує і буде пропущений: {output_path}")
+                    fail_count += 1
+                    failed_indices.append(i)
+                    continue
             
             # Перевірка диску
             if self.output_folder:

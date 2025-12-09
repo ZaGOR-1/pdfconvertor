@@ -35,23 +35,26 @@ class SettingsWindow(ctk.CTkToplevel):
         
         # Налаштування вікна
         self.title("⚙️ Налаштування")
-        self.geometry("600x700")
-        self.resizable(False, False)
+        self.geometry("600x550")
+        self.minsize(500, 450)
+        self.resizable(True, True)
         
-        # Завантаження збереженої позиції або центрування
+        # Завантаження збереженої позиції та розмірів
         saved_x = self.config.get("settings_window.x")
         saved_y = self.config.get("settings_window.y")
+        saved_width = self.config.get("settings_window.width", 600)
+        saved_height = self.config.get("settings_window.height", 550)
         
         self.update_idletasks()
         
         if saved_x is not None and saved_y is not None:
-            # Використовуємо збережену позицію
-            self.geometry(f"600x700+{saved_x}+{saved_y}")
+            # Використовуємо збережену позицію та розміри
+            self.geometry(f"{saved_width}x{saved_height}+{saved_x}+{saved_y}")
         else:
             # Центруємо вікно
-            x = (self.winfo_screenwidth() // 2) - (600 // 2)
-            y = (self.winfo_screenheight() // 2) - (700 // 2)
-            self.geometry(f"600x700+{x}+{y}")
+            x = (self.winfo_screenwidth() // 2) - (saved_width // 2)
+            y = (self.winfo_screenheight() // 2) - (saved_height // 2)
+            self.geometry(f"{saved_width}x{saved_height}+{x}+{y}")
         
         # Модальність
         self.transient(parent)
@@ -69,7 +72,7 @@ class SettingsWindow(ctk.CTkToplevel):
     def _create_widgets(self):
         """Створення елементів інтерфейсу."""
         # Основний контейнер з прокруткою
-        main_frame = ctk.CTkScrollableFrame(self, width=560, height=600)
+        main_frame = ctk.CTkScrollableFrame(self, width=560, height=400)
         main_frame.pack(padx=20, pady=20, fill="both", expand=True)
         
         # Заголовок
@@ -317,9 +320,6 @@ class SettingsWindow(ctk.CTkToplevel):
         """Збереження налаштувань."""
         # Збір всіх налаштувань
         settings = {
-            "pdf_quality": self.quality_reverse_map.get(self.quality_var.get(), "standard"),
-            "orientation": "portrait" if "Портретна" in self.orientation_var.get() else "landscape",
-            "page_size": self.pagesize_var.get(),
             "enable_compression": self.compression_var.get(),
             "compression_level": self.compression_level_var.get(),
             "ask_overwrite": self.ask_overwrite_var.get(),
@@ -340,33 +340,56 @@ class SettingsWindow(ctk.CTkToplevel):
         self._on_closing()
     
     def _on_closing(self):
-        """Обробник закриття вікна - збереження позиції."""
+        """Обробник закриття вікна - збереження позиції та розмірів."""
         try:
             # Оновлення інформації про вікно
             self.update_idletasks()
             
             # Отримання поточної геометрії
             geometry = self.geometry()
-            # Формат: "WIDTHxHEIGHT+X+Y"
-            parts = geometry.replace('x', '+').split('+')
-            if len(parts) >= 4:
-                x = int(parts[2])
-                y = int(parts[3])
+            # Формат: "WIDTHxHEIGHT+X+Y" або "WIDTHxHEIGHT-X-Y"
+            print(f"Debug: geometry = {geometry}")
+            
+            # Парсинг геометрії
+            # Розділяємо на розмір та позицію
+            if '+' in geometry or '-' in geometry:
+                # Знаходимо позицію першого + або -
+                pos_index = min(
+                    (geometry.find('+') if '+' in geometry else len(geometry)),
+                    (geometry.find('-', 1) if '-' in geometry[1:] else len(geometry))  # Пропускаємо перший символ для від'ємних значень
+                )
                 
-                # Збереження позиції
+                size_part = geometry[:pos_index]
+                pos_part = geometry[pos_index:]
+                
+                # Парсинг розміру
+                width, height = map(int, size_part.split('x'))
+                
+                # Парсинг позиції
+                pos_part = pos_part.replace('+', ' +').replace('-', ' -')
+                coords = [int(x) for x in pos_part.split()]
+                x, y = coords[0], coords[1] if len(coords) > 1 else coords[0]
+                
+                print(f"Debug: width={width}, height={height}, x={x}, y={y}")
+                
+                # Збереження позиції та розмірів
                 self.config.set("settings_window.x", x)
                 self.config.set("settings_window.y", y)
+                self.config.set("settings_window.width", width)
+                self.config.set("settings_window.height", height)
+                
+                # Примусове збереження конфігурації
+                self.config.save()
         except Exception as e:
-            print(f"Помилка збереження позиції вікна налаштувань: {e}")
+            print(f"Помилка збереження геометрії вікна налаштувань: {e}")
+            import traceback
+            traceback.print_exc()
         
         # Закриття вікна
         self.destroy()
         
     def _reset_to_defaults(self):
         """Скидання налаштувань до значень за замовчуванням."""
-        self.quality_var.set("Стандартна")
-        self.orientation_var.set("📄 Портретна")
-        self.pagesize_var.set("A4")
         self.compression_var.set(False)
         self.compression_level_var.set(6)
         self.ask_overwrite_var.set(True)

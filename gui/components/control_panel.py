@@ -60,10 +60,10 @@ class ControlPanel(ctk.CTkFrame):
         # Кнопка "Вибрати папку"
         self.btn_select_folder = ctk.CTkButton(
             self,
-            text=self.i18n.get("icon_folder"),
-            width=40,
+            text=self.i18n.get("icon_folder") + " Папка",
+            width=100,
             height=40,
-            font=ctk.CTkFont(size=18),
+            font=ctk.CTkFont(size=13),
             fg_color=self.theme_manager.get_color("info"),
             command=self.on_select_folder
         )
@@ -118,9 +118,14 @@ class ControlPanel(ctk.CTkFrame):
             width=40,
             height=40,
             font=ctk.CTkFont(size=18),
-            fg_color=self.theme_manager.get_color("bg_tertiary")
+            fg_color=self.theme_manager.get_color("settings")
         )
         self.btn_settings.grid(row=1, column=3, padx=5, pady=10)
+        self.theme_manager.apply_hover_effect(
+            self.btn_settings,
+            enter_color=self.theme_manager.get_color("settings"),
+            leave_color=self.theme_manager.get_color("settings")
+        )
         
         # Центрування кнопок
         self.grid_columnconfigure(0, weight=0)

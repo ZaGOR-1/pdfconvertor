@@ -22,6 +22,15 @@ class FileHandler:
     # Кеш для результатів валідації
     _validation_cache: Dict[str, Tuple[bool, str, float]] = {}
     
+    @classmethod
+    def set_max_file_size(cls, size_mb: int):
+        """Встановити максимальний розмір файлу.
+        
+        Args:
+            size_mb: Максимальний розмір в МБ
+        """
+        cls.MAX_FILE_SIZE_MB = max(1, min(size_mb, 500))  # Обмеження 1-500 МБ
+    
     @staticmethod
     def is_word_file(file_path: Path) -> bool:
         """Перевірка, чи є файл Word документом.

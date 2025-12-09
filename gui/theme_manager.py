@@ -30,56 +30,14 @@ class ThemeManager:
         self._themes = {
             "dark": {
                 # Основні кольори
-                "bg_primary": "#1a1a1a",
-                "bg_secondary": "#2b2b2b",
-                "bg_tertiary": "#3b3b3b",
+                "bg_primary": "#1e1e1e",
+                "bg_secondary": "#252526",
+                "bg_tertiary": "#2d2d30",
                 
                 # Кольори тексту
-                "text_primary": "#dce4ee",
-                "text_secondary": "#a0a0a0",
-                "text_disabled": "#666666",
-                
-                # Акцентні кольори
-                "accent_primary": "#1f6aa5",
-                "accent_hover": "#2d7ab8",
-                "accent_active": "#3e8bc7",
-                
-                # Кнопки
-                "button_bg": "#1f6aa5",
-                "button_hover": "#2d7ab8",
-                "button_active": "#3e8bc7",
-                "button_disabled": "#3b3b3b",
-                
-                # Статуси
-                "success": "#28a745",
-                "warning": "#ffc107",
-                "error": "#dc3545",
-                "info": "#17a2b8",
-                
-                # Drag & Drop зона
-                "drop_zone_bg": "#2b2b2b",
-                "drop_zone_border": "#1f6aa5",
-                "drop_zone_hover": "#3b3b3b",
-                "drop_zone_active": "#1f6aa5",
-                
-                # Прогрес бари
-                "progress_bg": "#3b3b3b",
-                "progress_fill": "#1f6aa5",
-                
-                # Рамки та роздільники
-                "border": "#3b3b3b",
-                "separator": "#3b3b3b",
-            },
-            "light": {
-                # Основні кольори
-                "bg_primary": "#f0f2f5",
-                "bg_secondary": "#ffffff",
-                "bg_tertiary": "#e4e6eb",
-                
-                # Кольори тексту
-                "text_primary": "#212529",
-                "text_secondary": "#495057",
-                "text_disabled": "#adb5bd",
+                "text_primary": "#e4e6eb",
+                "text_secondary": "#b0b3b8",
+                "text_disabled": "#6e7681",
                 
                 # Акцентні кольори
                 "accent_primary": "#0d6efd",
@@ -90,13 +48,57 @@ class ThemeManager:
                 "button_bg": "#0d6efd",
                 "button_hover": "#0b5ed7",
                 "button_active": "#0a58ca",
-                "button_disabled": "#dee2e6",
+                "button_disabled": "#2d2d30",
+                
+                # Статуси
+                "success": "#238636",
+                "warning": "#d29922",
+                "error": "#da3633",
+                "info": "#1f6feb",
+                "settings": "#373e47",
+                
+                # Drag & Drop зона
+                "drop_zone_bg": "#252526",
+                "drop_zone_border": "#0d6efd",
+                "drop_zone_hover": "#2d2d30",
+                "drop_zone_active": "#0d6efd",
+                
+                # Прогрес бари
+                "progress_bg": "#2d2d30",
+                "progress_fill": "#0d6efd",
+                
+                # Рамки та роздільники
+                "border": "#3e4451",
+                "separator": "#3e4451",
+            },
+            "light": {
+                # Основні кольори
+                "bg_primary": "#f5f6f7",
+                "bg_secondary": "#ffffff",
+                "bg_tertiary": "#e8eaed",
+                
+                # Кольори тексту
+                "text_primary": "#1c1e21",
+                "text_secondary": "#65676b",
+                "text_disabled": "#8a8d91",
+                
+                # Акцентні кольори
+                "accent_primary": "#0d6efd",
+                "accent_hover": "#0b5ed7",
+                "accent_active": "#0a58ca",
+                
+                # Кнопки
+                "button_bg": "#0d6efd",
+                "button_hover": "#0b5ed7",
+                "button_active": "#0a58ca",
+                "button_disabled": "#e4e6eb",
                 
                 # Статуси
                 "success": "#198754",
-                "warning": "#ffc107",
-                "error": "#dc3545",
-                "info": "#0dcaf0",
+                "warning": "#d97706",
+                "error": "#b91c1c",
+                "info": "#0891b2",
+                "settings": "#495057",
                 
                 # Drag & Drop зона
                 "drop_zone_bg": "#f8f9fa",
@@ -109,8 +111,8 @@ class ThemeManager:
                 "progress_fill": "#0d6efd",
                 
                 # Рамки та роздільники
-                "border": "#ced4da",
-                "separator": "#dee2e6",
+                "border": "#dadde1",
+                "separator": "#e4e6eb",
             }
         }
     
