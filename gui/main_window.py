@@ -296,17 +296,22 @@ class MainWindow:
         self.overall_progress.set(0)
         self.overall_progress.grid_remove()  # Сховати до початку конвертації
         
-        # Кнопка "Додати файли" з hover ефектом
-        self.btn_add_files = ctk.CTkButton(
+        # Кнопка "Вибрати папку" з hover ефектом
+        self.btn_select_folder = ctk.CTkButton(
             button_frame,
-            text=self.i18n.get("btn_add_files"),
-            width=200,
+            text="📂",
+            width=40,
             height=40,
-            font=ctk.CTkFont(size=14, weight="bold"),
-            command=self._on_add_files
+            font=ctk.CTkFont(size=18),
+            fg_color=("#17a2b8", "#117a8b"),
+            command=self._on_select_output_folder
         )
-        self.btn_add_files.grid(row=1, column=0, padx=5, pady=10)
-        self.theme_manager.apply_hover_effect(self.btn_add_files)
+        self.btn_select_folder.grid(row=1, column=0, padx=5, pady=10)
+        self.theme_manager.apply_hover_effect(
+            self.btn_select_folder,
+            enter_color=("#138496", "#0c5460"),
+            leave_color=("#17a2b8", "#117a8b")
+        )
         
         # Кнопка "Конвертувати" з hover ефектом
         self.btn_convert = ctk.CTkButton(
@@ -385,15 +390,11 @@ class MainWindow:
     # Обробники подій (stubs)
     
     def _on_drop_area_click(self, event=None):
-        """Обробник кліку на область drag & drop.
+        """Обробник кліку на область drag & drop - відкриває діалог вибору файлів.
         
         Args:
             event: Подія кліку миші
         """
-        self._on_add_files()
-    
-    def _on_add_files(self):
-        """Обробник натискання кнопки 'Додати файли'."""
         self.update_status(self.i18n.get("status_selecting_files"))
         
         # Діалог вибору файлів
@@ -623,6 +624,28 @@ class MainWindow:
         
         widget.destroy()
         self.update_status(self.i18n.get("status_file_removed", name=file_path.name))
+    
+    def _on_select_output_folder(self):
+        """Обробник вибору папки для збереження PDF."""
+        # Завантаження останньої папки з конфігурації
+        initial_dir = self.config.get_last_output_folder()
+        
+        folder = filedialog.askdirectory(
+            title="Виберіть папку для збереження PDF",
+            initialdir=initial_dir
+        )
+        
+        if folder:
+            self.output_folder = Path(folder)
+            # Збереження папки в конфігурацію
+            self.config.set_last_output_folder(str(self.output_folder))
+            self.logger.info(f"📂 Обрано папку збереження: {self.output_folder}")
+            self.update_status(f"📂 Папка: {self.output_folder.name}")
+            
+            # Змінюємо колір кнопки щоб показати, що папка обрана
+            self.btn_select_folder.configure(fg_color=("#28a745", "#1e7e34"))
+        else:
+            self.update_status(self.i18n.get("status_ready"))
         
     def _on_convert(self):
         """Обробник натискання кнопки 'Конвертувати'."""
@@ -669,8 +692,8 @@ class MainWindow:
         )
         
         # Вимкнення інших кнопок
-        self.btn_add_files.configure(state="disabled")
         self.btn_clear.configure(state="disabled")
+        self.btn_select_folder.configure(state="disabled")
     
     def _on_stop_conversion(self):
         """Обробник зупинки конвертації."""
@@ -723,6 +746,38 @@ class MainWindow:
             # Визначення вихідного шляху з автонумерацією
             auto_number = self.config.get("conversion.auto_number_files", False)
             output_path = FileHandler.get_output_path(file_path, self.output_folder, auto_number=auto_number)
+            
+            # Перевірка чи файл існує (якщо ввімкнено запит підтвердження)
+            ask_overwrite = self.config.get("conversion.ask_overwrite", True)
+            if ask_overwrite and output_path.exists():
+                # Запитуємо підтвердження в головному потоці
+                overwrite_result = [False]  # Обгортка для зміни з callback
+                
+                def ask_user():
+                    result = messagebox.askyesno(
+                        "Файл існує",
+                        f"Файл {output_path.name} вже існує.\n\nПерезаписати?",
+                        icon='warning'
+                    )
+                    overwrite_result[0] = result
+                
+                self.root.after(0, ask_user)
+                
+                # Чекаємо відповідь (простий спінлок, бо це background thread)
+                import time as time_module
+                timeout = 30  # 30 секунд таймаут
+                waited = 0
+                while waited < timeout:
+                    if overwrite_result[0] or self.stop_conversion:
+                        break
+                    time_module.sleep(0.1)
+                    waited += 0.1
+                
+                if not overwrite_result[0]:
+                    self._update_file_status_safe(i, "⏭️ Пропущено")
+                    self.root.after(0, lambda idx=i: self._hide_file_progress(idx))
+                    self.logger.info(f"Конвертацію {file_path.name} пропущено користувачем")
+                    continue
             
             # Логування початку конвертації
             self.logger.log_conversion_start(str(file_path), str(output_path))
@@ -794,8 +849,8 @@ class MainWindow:
             fg_color=("green", "darkgreen"),
             command=self._on_convert
         )
-        self.btn_add_files.configure(state="normal")
         self.btn_clear.configure(state="normal")
+        self.btn_select_folder.configure(state="normal")
         
         # Форматування часу
         if elapsed_time < 60:
@@ -805,8 +860,10 @@ class MainWindow:
             seconds = int(elapsed_time % 60)
             time_str = f"{minutes} {self.i18n.get('time_minutes')} {seconds} {self.i18n.get('time_seconds')}"
         
-        # Показати результати
-        self._show_conversion_results(success, failed, time_str)
+        # Показати результати (якщо ввімкнено сповіщення)
+        show_notifications = self.config.get("conversion.show_notifications", True)
+        if show_notifications:
+            self._show_conversion_results(success, failed, time_str)
     
     def _perform_conversion(self):
         """DEPRECATED: Старий синхронний метод конвертації.
