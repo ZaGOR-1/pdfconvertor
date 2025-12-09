@@ -6,9 +6,11 @@ File Handler - Робота з файлами та валідація
 """
 
 from pathlib import Path
-from typing import Optional, Tuple, List
+from typing import Optional, Tuple, List, Dict
 import os
 import zipfile
+import shutil
+from functools import lru_cache
 
 
 class FileHandler:
@@ -16,6 +18,9 @@ class FileHandler:
     
     SUPPORTED_EXTENSIONS = {'.doc', '.docx'}
     MAX_FILE_SIZE_MB = 100
+    
+    # Кеш для результатів валідації
+    _validation_cache: Dict[str, Tuple[bool, str, float]] = {}
     
     @staticmethod
     def is_word_file(file_path: Path) -> bool:
@@ -30,15 +35,72 @@ class FileHandler:
         return file_path.suffix.lower() in FileHandler.SUPPORTED_EXTENSIONS
     
     @staticmethod
-    def validate_file(file_path: Path) -> Tuple[bool, str]:
-        """Валідація файлу перед конвертацією.
+    def check_disk_space(directory: Path, required_mb: float = 10) -> Tuple[bool, str]:
+        """Перевірка вільного місця на диску.
+        
+        Args:
+            directory: Шлях до директорії
+            required_mb: Необхідна кількість вільного місця в MB
+            
+        Returns:
+            Tuple[bool, str]: (достатньо місця, повідомлення)
+        """
+        try:
+            # Отримання інформації про диск
+            stat = shutil.disk_usage(directory)
+            free_mb = stat.free / (1024 * 1024)
+            
+            if free_mb < required_mb:
+                return False, f"Недостатньо місця на диску: {free_mb:.1f} MB (потрібно {required_mb} MB)"
+            
+            return True, f"Вільно: {free_mb:.1f} MB"
+            
+        except Exception as e:
+            return False, f"Помилка перевірки диску: {str(e)}"
+    
+    @staticmethod
+    def estimate_pdf_size(word_file: Path) -> float:
+        """Оцінка розміру PDF файлу в MB.
+        
+        Args:
+            word_file: Шлях до Word файлу
+            
+        Returns:
+            Оцінка розміру PDF в MB
+        """
+        try:
+            # PDF зазвичай трохи більший за DOCX (коефіцієнт 1.2-1.5)
+            word_size_mb = word_file.stat().st_size / (1024 * 1024)
+            return word_size_mb * 1.3
+        except:
+            return 10  # За замовчуванням 10 MB
+    
+    @staticmethod
+    def validate_file(file_path: Path, use_cache: bool = True) -> Tuple[bool, str]:
+        """Валідація файлу перед конвертацією з кешуванням.
         
         Args:
             file_path: Шлях до файлу
+            use_cache: Використовувати кеш
             
         Returns:
             Tuple[bool, str]: (валідний, повідомлення про помилку)
         """
+        # Перевірка кешу (ключ: шлях + mtime)
+        if use_cache:
+            try:
+                mtime = file_path.stat().st_mtime
+                cache_key = f"{file_path}_{mtime}"
+                
+                if cache_key in FileHandler._validation_cache:
+                    cached_valid, cached_msg, cached_time = FileHandler._validation_cache[cache_key]
+                    # Кеш дійсний протягом 60 секунд
+                    import time
+                    if time.time() - cached_time < 60:
+                        return cached_valid, cached_msg
+            except:
+                pass
+        
         # Перевірка існування
         if not file_path.exists():
             return False, f"Файл не існує: {file_path}"
@@ -60,12 +122,32 @@ class FileHandler:
         if not os.access(file_path, os.R_OK):
             return False, f"Немає доступу до читання: {file_path}"
         
-        # Перевірка цілісності файлу
+        # Перевірка цілісності файлу (тільки якщо не в кеші)
         is_valid, error = FileHandler.check_file_integrity(file_path)
         if not is_valid:
-            return False, error
+            result = (False, error)
+        else:
+            result = (True, "OK")
         
-        return True, "OK"
+        # Збереження в кеш
+        if use_cache:
+            try:
+                import time
+                mtime = file_path.stat().st_mtime
+                cache_key = f"{file_path}_{mtime}"
+                FileHandler._validation_cache[cache_key] = (result[0], result[1], time.time())
+                
+                # Обмеження розміру кешу (max 1000 елементів)
+                if len(FileHandler._validation_cache) > 1000:
+                    # Видалення найстаріших записів
+                    oldest_keys = sorted(FileHandler._validation_cache.keys(), 
+                                       key=lambda k: FileHandler._validation_cache[k][2])[:500]
+                    for key in oldest_keys:
+                        del FileHandler._validation_cache[key]
+            except:
+                pass
+        
+        return result
     
     @staticmethod
     def check_file_integrity(file_path: Path) -> Tuple[bool, str]:

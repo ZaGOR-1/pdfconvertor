@@ -106,7 +106,17 @@ class DocConverter:
                 
         except ImportError:
             return False, "Бібліотека docx2pdf не встановлена"
+        except PermissionError:
+            self.logger.error(f"Немає доступу до файлу {input_path.name}")
+            return False, f"Файл {input_path.name} використовується іншою програмою"
+        except MemoryError:
+            self.logger.error(f"Недостатньо пам'яті для конвертації {input_path.name}")
+            return False, "Недостатньо пам'яті для конвертації файлу"
+        except OSError as e:
+            self.logger.error(f"Помилка файлової системи для {input_path.name}: {e}")
+            return False, f"Помилка доступу до файлу: {str(e)}"
         except Exception as e:
+            self.logger.error(f"Несподівана помилка при конвертації {input_path.name}: {e}")
             return False, f"Помилка конвертації DOCX: {str(e)}"
     
     def _convert_doc(
@@ -126,41 +136,85 @@ class DocConverter:
         if not self.is_windows:
             return False, "Конвертація .doc файлів підтримується тільки на Windows"
         
+        word = None
+        doc = None
+        com_initialized = False
+        
         try:
             import win32com.client
             import pythoncom
+            import pywintypes
             
             # Ініціалізація COM
             pythoncom.CoInitialize()
+            com_initialized = True
             
             # Константи для Word
             wdFormatPDF = 17
             
-            # Створення об'єкта Word
-            word = win32com.client.Dispatch("Word.Application")
-            word.Visible = False
-            
+            # Створення об'єкта Word з timeout
             try:
-                # Відкриття документа
-                doc = word.Documents.Open(str(input_path.absolute()))
-                
-                # Збереження як PDF
-                doc.SaveAs(str(output_path.absolute()), FileFormat=wdFormatPDF)
-                
-                # Закриття документа
-                doc.Close()
-                
-                return True, f"✅ Успішно конвертовано: {output_path.name}"
-                
-            finally:
-                # Закриття Word
-                word.Quit()
-                pythoncom.CoUninitialize()
-                
+                word = win32com.client.DispatchEx("Word.Application")
+                word.Visible = False
+                word.DisplayAlerts = 0  # Вимкнути всі діалоги
+            except Exception as e:
+                self.logger.error(f"Не вдалося запустити MS Word: {e}")
+                return False, "MS Word не знайдено або не може бути запущений"
+            
+            # Відкриття документа
+            try:
+                doc = word.Documents.Open(
+                    str(input_path.absolute()),
+                    ConfirmConversions=False,
+                    ReadOnly=True,
+                    AddToRecentFiles=False
+                )
+            except pywintypes.com_error as e:
+                self.logger.error(f"Помилка відкриття документа {input_path.name}: {e}")
+                return False, f"Не вдалося відкрити документ: файл може бути пошкоджений"
+            
+            # Збереження як PDF
+            try:
+                doc.SaveAs(
+                    str(output_path.absolute()), 
+                    FileFormat=wdFormatPDF,
+                    EmbedTrueTypeFonts=True
+                )
+            except pywintypes.com_error as e:
+                self.logger.error(f"Помилка збереження PDF {output_path.name}: {e}")
+                return False, f"Не вдалося створити PDF: {str(e)}"
+            
+            return True, f"✅ Успішно конвертовано: {output_path.name}"
+            
         except ImportError:
             return False, "pywin32 не встановлено або MS Word не знайдено"
+        except MemoryError:
+            self.logger.error(f"Недостатньо пам'яті для конвертації {input_path.name}")
+            return False, "Недостатньо пам'яті для конвертації файлу"
         except Exception as e:
+            self.logger.error(f"Несподівана помилка при конвертації {input_path.name}: {e}")
             return False, f"Помилка конвертації DOC: {str(e)}"
+        finally:
+            # Гарантований cleanup COM об'єктів
+            try:
+                if doc is not None:
+                    doc.Close(SaveChanges=False)
+                    doc = None
+            except:
+                pass
+            
+            try:
+                if word is not None:
+                    word.Quit()
+                    word = None
+            except:
+                pass
+            
+            if com_initialized:
+                try:
+                    pythoncom.CoUninitialize()
+                except:
+                    pass
     
     def _compress_pdf(self, pdf_path: Path) -> bool:
         """Безвтратне стиснення PDF файлу з підтримкою різних рівнів.

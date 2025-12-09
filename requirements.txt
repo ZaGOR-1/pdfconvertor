@@ -4,12 +4,20 @@ customtkinter==5.2.2
 # Document Conversion
 docx2pdf==0.1.8
 pywin32==306
+pikepdf==8.10.1
 
 # Drag & Drop Support
 tkinterdnd2==0.3.0
 
 # Image Processing
 Pillow==10.3.0
+
+# System Monitoring
+psutil==5.9.8
+
+# Update Checker
+requests==2.31.0
+packaging==23.2
 
 # Utilities
 pathlib2==2.3.7.post1

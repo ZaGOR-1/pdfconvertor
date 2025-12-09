@@ -35,8 +35,18 @@ class Localization:
         """
         return {
                 # Головне вікно
-                "app_title": "Word to PDF Converter",
+                "app_title": "📄 Word to PDF Converter",
+                "app_subtitle": "Конвертуйте Word документи (DOC, DOCX) у PDF формат",
+                "app_version": "v0.1.0",
                 "ready": "Готово до роботи",
+                
+                # Іконки
+                "icon_document": "📄",
+                "icon_folder": "📂",
+                "icon_clip": "📎",
+                "icon_download": "📥",
+                "icon_pending": "⏳",
+                "btn_select_folder": "Вибрати папку",
                 
                 # Кнопки
                 "btn_convert": "🔄 Конвертувати",
@@ -85,6 +95,9 @@ class Localization:
                 
                 # Діалоги
                 "dialog_select_files": "Виберіть Word документи",
+                "dialog_select_output_folder": "Виберіть папку для збереження PDF",
+                "dialog_file_exists_title": "Файл існує",
+                "dialog_file_exists_message": "Файл {name} вже існує.\n\nПерезаписати?",
                 "filetype_word_docs": "Word документи",
                 "filetype_doc": "DOC файли",
                 "filetype_docx": "DOCX файли",
@@ -127,6 +140,7 @@ class Localization:
                 
                 # Статуси файлів
                 "file_pending": "⏳ Очікування",
+                "file_waiting": "⏳ Очікує",
                 "file_converting": "🔄 Конвертація...",
                 "file_completed": "✅ Завершено",
                 "file_failed": "❌ Помилка",
