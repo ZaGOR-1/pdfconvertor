@@ -1,0 +1,15 @@
+# GUI Framework
+customtkinter==5.2.2
+
+# Document Conversion
+docx2pdf==0.1.8
+pywin32==306
+
+# Drag & Drop Support
+tkinterdnd2==0.3.0
+
+# Image Processing
+Pillow==10.3.0
+
+# Utilities
+pathlib2==2.3.7.post1
