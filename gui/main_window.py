@@ -22,6 +22,7 @@ from converter.file_handler import FileHandler
 
 # Імпорт компонентів GUI
 from gui.components import DropZonePanel, FileListPanel, ControlPanel, StatusPanel
+from gui.components.log_viewer_panel import LogViewerPanel
 from gui.theme_manager import ThemeManager
 from gui.settings_window import SettingsWindow
 
@@ -59,7 +60,10 @@ class MainWindow:
         self.output_folder: Optional[Path] = None
         self.is_converting = False
         self.stop_conversion = False
+        self.pause_conversion = False  # #24 Пауза конвертації
         self.conversion_thread: Optional[threading.Thread] = None
+        self.log_viewer: Optional[LogViewerPanel] = None  # #27 Вікно логів
+        self.log_buffer: List[tuple] = []  # Буфер логів (message, level)
         
         # Перевірка відновлення та оновлень
         self.root.after(self.RECOVERY_CHECK_DELAY_MS, self._check_recovery)
@@ -126,6 +130,9 @@ class MainWindow:
         
         self.root.minsize(800, 600)
         self.root.protocol("WM_DELETE_WINDOW", self._on_closing)
+        
+        # #33 Гарячі клавіші
+        self._setup_keyboard_shortcuts()
     
     def _center_window(self):
         """Центрування вікна на екрані."""
@@ -134,6 +141,33 @@ class MainWindow:
         x = (screen_width - self.window_width) // 2
         y = (screen_height - self.window_height) // 2
         self.root.geometry(f"{self.window_width}x{self.window_height}+{x}+{y}")
+    
+    def _setup_keyboard_shortcuts(self):
+        """#33 Налаштування гарячих клавіш."""
+        # Ctrl+O - Відкрити файли
+        self.root.bind('<Control-o>', lambda e: self._on_select_files())
+        self.root.bind('<Control-O>', lambda e: self._on_select_files())
+        
+        # Ctrl+S - Почати конвертацію
+        self.root.bind('<Control-s>', lambda e: self._on_convert() if not self.is_converting else None)
+        self.root.bind('<Control-S>', lambda e: self._on_convert() if not self.is_converting else None)
+        
+        # Ctrl+L - Очистити список
+        self.root.bind('<Control-l>', lambda e: self._on_clear())
+        self.root.bind('<Control-L>', lambda e: self._on_clear())
+        
+        # Escape - Зупинити конвертацію
+        self.root.bind('<Escape>', lambda e: self._on_stop_conversion() if self.is_converting else None)
+        
+        # Ctrl+P - Пауза/Відновити
+        self.root.bind('<Control-p>', lambda e: self._toggle_pause() if self.is_converting else None)
+        self.root.bind('<Control-P>', lambda e: self._toggle_pause() if self.is_converting else None)
+        
+        # F2 - Відкрити логи
+        self.root.bind('<F2>', lambda e: self._show_logs())
+        
+        # F1 - Налаштування
+        self.root.bind('<F1>', lambda e: self._on_settings())
     
     def _create_ui(self):
         """Створення UI компонентів."""
@@ -175,6 +209,7 @@ class MainWindow:
             on_clear=self._on_clear,
             on_select_folder=self._on_select_output_folder,
             on_settings=self._on_settings,
+            on_pause=self._toggle_pause,  # #24 Додано паузу
             theme_manager=self.theme_manager,
             i18n=self.i18n
         )
@@ -192,6 +227,17 @@ class MainWindow:
         """Створення заголовка."""
         self.header_frame = ctk.CTkFrame(self.root, corner_radius=0, fg_color=self.theme_manager.get_color("bg_secondary"))
         self.header_frame.grid(row=0, column=0, sticky="ew", padx=0, pady=0)
+        
+        # #27 Кнопка логів
+        log_btn = ctk.CTkButton(
+            self.header_frame,
+            text="📋",
+            width=40,
+            height=36,
+            font=ctk.CTkFont(size=16),
+            command=self._show_logs
+        )
+        log_btn.place(relx=0.96, rely=0.5, anchor="e")
         
         # Title
         title_label = ctk.CTkLabel(
@@ -357,6 +403,118 @@ class MainWindow:
             FileHandler.set_max_file_size(settings['max_file_size_mb'])
             self.logger.info(f"📏 Максимальний розмір файлу оновлено: {settings['max_file_size_mb']} МБ")
     
+    def _validate_files_before_conversion(self) -> dict:
+        """#32 Валідація всіх файлів перед початком конвертації.
+        
+        Returns:
+            dict: {'can_proceed': bool, 'warnings': List[str], 'errors': List[str]}
+        """
+        result = {
+            'can_proceed': True,
+            'warnings': [],
+            'errors': []
+        }
+        
+        invalid_files = []
+        large_files = []
+        missing_files = []
+        
+        for file_path in self.files_list:
+            # Перевірка існування
+            if not file_path.exists():
+                missing_files.append(file_path.name)
+                continue
+            
+            # Валідація файлу
+            is_valid, error_msg = FileHandler.validate_file(file_path)
+            if not is_valid:
+                invalid_files.append(f"{file_path.name}: {error_msg}")
+            
+            # Перевірка великих файлів
+            is_large, size_mb = FileHandler.is_large_file(file_path)
+            if is_large:
+                large_files.append(f"{file_path.name} ({size_mb:.1f} MB)")
+        
+        # Формування повідомлень
+        if missing_files:
+            result['errors'].append(f"❌ Файли не знайдено: {', '.join(missing_files[:3])}")
+            if len(missing_files) > 3:
+                result['errors'].append(f"   ... та ще {len(missing_files) - 3}")
+            result['can_proceed'] = False
+        
+        if invalid_files:
+            result['errors'].append(f"❌ Невалідні файли: {', '.join(invalid_files[:3])}")
+            if len(invalid_files) > 3:
+                result['errors'].append(f"   ... та ще {len(invalid_files) - 3}")
+            result['can_proceed'] = False
+        
+        if large_files:
+            result['warnings'].append(f"⚠️ Великі файли (>50MB): {', '.join(large_files[:3])}")
+            if len(large_files) > 3:
+                result['warnings'].append(f"   ... та ще {len(large_files) - 3}")
+            result['warnings'].append("   Конвертація може зайняти більше часу")
+        
+        # Перевірка місця на диску
+        if self.output_folder:
+            total_size = sum(FileHandler.estimate_pdf_size(f) for f in self.files_list if f.exists())
+            has_space, space_msg = FileHandler.check_disk_space(self.output_folder, total_size)
+            if not has_space:
+                result['errors'].append(f"❌ {space_msg}")
+                result['can_proceed'] = False
+        
+        # Показати помилки якщо є
+        if result['errors']:
+            error_msg = "❌ Не можна почати конвертацію:\n\n" + "\n".join(result['errors'])
+            messagebox.showerror("Помилка валідації", error_msg)
+        
+        return result
+    
+    def _show_logs(self):
+        """#27 Показати вікно логів."""
+        if self.log_viewer is None or not self.log_viewer.winfo_exists():
+            self.log_viewer = LogViewerPanel(self.root, self.theme_manager)
+            # Додаємо всі логи з буфера
+            for message, level in self.log_buffer:
+                self.log_viewer.add_log(message, level)
+            self._log_to_viewer("Вікно логів відкрито", "INFO")
+        else:
+            self.log_viewer.focus()
+    
+    def _log_to_viewer(self, message: str, level: str = "INFO"):
+        """#27 Додати повідомлення в UI логи.
+        
+        Args:
+            message: Текст повідомлення
+            level: Рівень (INFO, WARNING, ERROR, SUCCESS)
+        """
+        # Додаємо в буфер для збереження історії
+        self.log_buffer.append((message, level))
+        # Обмежуємо розмір буфера (останні 1000 логів)
+        if len(self.log_buffer) > 1000:
+            self.log_buffer = self.log_buffer[-1000:]
+        
+        # Якщо вікно відкрите - показуємо лог
+        if self.log_viewer and self.log_viewer.winfo_exists():
+            self.log_viewer.add_log(message, level)
+    
+    def _toggle_pause(self):
+        """#24 Перемикання паузи конвертації."""
+        if not self.is_converting:
+            self.logger.warning("Спроба паузи без активної конвертації")
+            return
+        
+        self.pause_conversion = not self.pause_conversion
+        self.logger.info(f"Пауза: {self.pause_conversion}")
+        
+        if self.pause_conversion:
+            self.update_status("⏸️ Конвертація призупинена")
+            self._log_to_viewer("⏸️ Конвертація призупинена", "WARNING")
+            self.control_panel.set_pause_state(True)
+        else:
+            self.update_status("▶️ Конвертація відновлена")
+            self._log_to_viewer("▶️ Конвертація відновлена", "INFO")
+            self.control_panel.set_pause_state(False)
+    
     def _on_convert(self):
         """Початок конвертації."""
         if not self.files_list:
@@ -373,16 +531,30 @@ class MainWindow:
             )
             return
         
-        result = messagebox.askyesno(
-            self.i18n.get("msg_convert_confirm"),
-            self.i18n.get("msg_convert_question", count=len(self.files_list))
-        )
-        
-        if not result:
-            self.logger.info("Користувач скасував конвертацію")
+        # #32 Валідація файлів перед конвертацією
+        validation_result = self._validate_files_before_conversion()
+        if not validation_result['can_proceed']:
             return
         
+        # Показати попередження якщо є
+        if validation_result['warnings']:
+            warning_msg = "⚠️ Виявлено попередження:\n\n" + "\n".join(validation_result['warnings'])
+            warning_msg += "\n\nПродовжити конвертацію?"
+            result = messagebox.askyesno("Попередження", warning_msg, icon='warning')
+            if not result:
+                return
+        else:
+            result = messagebox.askyesno(
+                self.i18n.get("msg_convert_confirm"),
+                self.i18n.get("msg_convert_question", count=len(self.files_list))
+            )
+            
+            if not result:
+                self.logger.info("Користувач скасував конвертацію")
+                return
+        
         self.logger.info(f"🚀 Початок конвертації {len(self.files_list)} файл(ів)")
+        self._log_to_viewer(f"Початок конвертації {len(self.files_list)} файл(ів)", "INFO")
         
         # UI зміни
         self.control_panel.show_progress_bar()
@@ -419,16 +591,34 @@ class MainWindow:
             
             for i, file_path in enumerate(self.files_list):
                 if self.stop_conversion:
+                    self._log_to_viewer("Конвертація зупинена користувачем", "WARNING")
                     break
+                
+                # #24 Чекаємо поки пауза не буде знята
+                if self.pause_conversion:
+                    self.logger.info(f"Пауза активна, очікування...")
+                
+                while self.pause_conversion and not self.stop_conversion:
+                    time.sleep(0.1)  # Зменшено з 0.5 для швидшої реакції
+                
+                if self.stop_conversion:
+                    break
+                
+                # Оновлення заголовка вікна з прогресом
+                progress_percent = int((i / len(self.files_list)) * 100)
+                self.root.title(f"Word to PDF Converter ({progress_percent}%)")
                 
                 # Прогрес (об'єднані оновлення UI)
                 progress = i / len(self.files_list)
                 self.root.after(0, lambda p=progress, idx=i: self._update_file_progress(idx, p, True))
                 
+                self._log_to_viewer(f"Обробка файлу: {file_path.name}", "INFO")
+                
                 # Валідація
                 is_valid, error_msg = FileHandler.validate_file(file_path)
                 
                 if not is_valid:
+                    self._log_to_viewer(f"❌ Помилка валідації: {file_path.name} - {error_msg}", "ERROR")
                     self.root.after(0, lambda idx=i, msg=error_msg: self._update_file_error(idx, msg))
                     fail_count += 1
                     failed_indices.append(i)
@@ -483,13 +673,16 @@ class MainWindow:
                         continue
                 
                 self.logger.log_conversion_start(str(file_path), str(output_path))
+                self._log_to_viewer(f"Конвертація: {file_path.name} → {output_path.name}", "INFO")
                 success, message = self.converter.convert_to_pdf(file_path, output_path)
                 
                 if success:
+                    self._log_to_viewer(f"✅ Успішно: {file_path.name}", "SUCCESS")
                     self.root.after(0, lambda idx=i: self._update_file_complete(idx))
                     success_count += 1
                     processed_indices.append(i)
                 else:
+                    self._log_to_viewer(f"❌ Помилка: {file_path.name} - {message}", "ERROR")
                     self.root.after(0, lambda idx=i: self._update_file_failed(idx))
                     fail_count += 1
                     failed_indices.append(i)
@@ -503,9 +696,17 @@ class MainWindow:
             self.logger.log_batch_complete(success_count, fail_count, elapsed_time)
             self.recovery_manager.clear_state()
             
+            # Відновлення заголовка вікна
+            self.root.title("Word to PDF Converter")
+            
+            # Логування результату
+            self._log_to_viewer(f"Конвертація завершена: {success_count} успішно, {fail_count} помилок", "SUCCESS" if fail_count == 0 else "WARNING")
+            
             self.root.after(0, lambda: self._finish_conversion(success_count, fail_count, elapsed_time))
         except Exception as e:
             self.logger.error(f"Критична помилка конвертації: {e}")
+            self._log_to_viewer(f"Критична помилка: {str(e)}", "ERROR")
+            self.root.title("Word to PDF Converter")
             self.root.after(0, lambda: self._finish_conversion(0, len(self.files_list), 0))
     
     def _finish_conversion(self, success: int, failed: int, elapsed_time: float) -> None:

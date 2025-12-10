@@ -19,8 +19,9 @@ class ControlPanel(ctk.CTkFrame):
         on_clear: Callable,
         on_select_folder: Callable,
         on_settings: Callable,
-        theme_manager,
-        i18n,
+        on_pause: Optional[Callable] = None,  # #24 Додано callback для паузи
+        theme_manager=None,
+        i18n=None,
         **kwargs
     ):
         """Ініціалізація панелі управління.
@@ -31,6 +32,7 @@ class ControlPanel(ctk.CTkFrame):
             on_clear: Callback для очищення
             on_select_folder: Callback для вибору папки
             on_settings: Callback для налаштувань
+            on_pause: Callback для паузи (опціонально)
             theme_manager: Менеджер тем
             i18n: Система локалізації
         """
@@ -40,6 +42,7 @@ class ControlPanel(ctk.CTkFrame):
         self.on_clear = on_clear
         self.on_select_folder = on_select_folder
         self.on_settings = on_settings
+        self.on_pause = on_pause  # #24
         self.theme_manager = theme_manager
         self.i18n = i18n
         
@@ -92,6 +95,25 @@ class ControlPanel(ctk.CTkFrame):
             leave_color=self.theme_manager.get_color("success")
         )
         
+        # #24 Кнопка "Пауза" (спочатку схована)
+        self.btn_pause = ctk.CTkButton(
+            self,
+            text="⏸️",
+            command=self.on_pause if self.on_pause else lambda: None,
+            width=60,
+            height=50,
+            corner_radius=15,
+            font=ctk.CTkFont(size=18),
+            fg_color=self.theme_manager.get_color("info")
+        )
+        self.btn_pause.grid(row=1, column=2, padx=5, pady=10)
+        self.btn_pause.grid_remove()  # Спочатку схована
+        self.theme_manager.apply_hover_effect(
+            self.btn_pause,
+            enter_color=self.theme_manager.get_color("info"),
+            leave_color=self.theme_manager.get_color("info")
+        )
+        
         # Кнопка "Очистити"
         self.btn_clear = ctk.CTkButton(
             self,
@@ -103,7 +125,7 @@ class ControlPanel(ctk.CTkFrame):
             font=ctk.CTkFont(size=14),
             fg_color=self.theme_manager.get_color("warning")
         )
-        self.btn_clear.grid(row=1, column=2, padx=10, pady=10)
+        self.btn_clear.grid(row=1, column=3, padx=10, pady=10)
         self.theme_manager.apply_hover_effect(
             self.btn_clear,
             enter_color=self.theme_manager.get_color("warning"),
@@ -120,7 +142,7 @@ class ControlPanel(ctk.CTkFrame):
             font=ctk.CTkFont(size=18),
             fg_color=self.theme_manager.get_color("settings")
         )
-        self.btn_settings.grid(row=1, column=3, padx=5, pady=10)
+        self.btn_settings.grid(row=1, column=4, padx=5, pady=10)
         self.theme_manager.apply_hover_effect(
             self.btn_settings,
             enter_color=self.theme_manager.get_color("settings"),
@@ -132,6 +154,7 @@ class ControlPanel(ctk.CTkFrame):
         self.grid_columnconfigure(1, weight=1)
         self.grid_columnconfigure(2, weight=0)
         self.grid_columnconfigure(3, weight=0)
+        self.grid_columnconfigure(4, weight=0)
     
     def set_converting_state(self, is_converting: bool):
         """Встановити стан конвертації.
@@ -146,6 +169,9 @@ class ControlPanel(ctk.CTkFrame):
             )
             self.btn_clear.configure(state="disabled")
             self.btn_select_folder.configure(state="disabled")
+            # #24 Показати кнопку паузи
+            if self.on_pause:
+                self.btn_pause.grid()
         else:
             self.btn_convert.configure(
                 text=self.i18n.get("btn_convert"),
@@ -153,6 +179,19 @@ class ControlPanel(ctk.CTkFrame):
             )
             self.btn_clear.configure(state="normal")
             self.btn_select_folder.configure(state="normal")
+            # #24 Сховати кнопку паузи
+            self.btn_pause.grid_remove()
+    
+    def set_pause_state(self, is_paused: bool):
+        """#24 Встановити стан паузи.
+        
+        Args:
+            is_paused: True якщо конвертація на паузі
+        """
+        if is_paused:
+            self.btn_pause.configure(text="▶️")  # Іконка відновлення
+        else:
+            self.btn_pause.configure(text="⏸️")  # Іконка паузи
     
     def show_progress_bar(self):
         """Показати загальний прогрес бар."""
