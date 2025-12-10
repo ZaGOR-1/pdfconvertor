@@ -121,12 +121,6 @@ MIT License - дивіться [LICENSE](LICENSE) для деталей
 
 Вітаються pull requests! Для великих змін, будь ласка, спочатку відкрийте issue для обговорення.
 
-## 📧 Контакти
-
-- **Автор**: Ваше Ім'я
-- **Email**: your.email@example.com
-- **GitHub**: [@yourusername](https://github.com/yourusername)
-
 ## 🙏 Подяки
 
 - [CustomTkinter](https://github.com/TomSchimansky/CustomTkinter) - сучасний UI фреймворк
