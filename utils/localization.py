@@ -73,9 +73,6 @@ class Localization:
                 "status_stopping": "⏸️ Зупинка конвертації...",
                 "status_selecting_files": "📁 Вибір файлів...",
                 "status_file_removed": "🗑️ Файл видалено: {name}",
-                "status_theme_changed": "🎨 Тему змінено на {theme}",
-                "theme_dark": "темну",
-                "theme_light": "світлу",
                 
                 # Повідомлення
                 "msg_no_files": "Немає файлів",

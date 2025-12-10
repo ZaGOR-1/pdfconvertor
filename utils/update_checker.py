@@ -33,7 +33,7 @@ class UpdateChecker:
         try:
             self.logger.info(f"Перевірка оновлень. Поточна версія: {self.CURRENT_VERSION}")
             
-            # Запит до API
+            # Запит до API з обробкою помилок мережі
             response = requests.get(
                 self.UPDATE_URL, 
                 timeout=self.TIMEOUT,
@@ -58,8 +58,14 @@ class UpdateChecker:
                 self.logger.warning(f"Не вдалося перевірити оновлення: HTTP {response.status_code}")
                 return False, None, None
                 
+        except requests.Timeout:
+            self.logger.warning(f"Тайм-аут при перевірці оновлень ({self.TIMEOUT}s)")
+            return False, None, None
+        except requests.ConnectionError as e:
+            self.logger.warning(f"Помилка підключення до сервера оновлень: {e}")
+            return False, None, None
         except requests.RequestException as e:
-            self.logger.warning(f"Помилка з'єднання при перевірці оновлень: {e}")
+            self.logger.warning(f"Помилка HTTP при перевірці оновлень: {e}")
             return False, None, None
         except Exception as e:
             self.logger.error(f"Неочікувана помилка при перевірці оновлень: {e}")

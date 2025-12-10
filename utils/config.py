@@ -37,7 +37,6 @@ class ConfigManager:
             Словник з дефолтними налаштуваннями
         """
         return {
-            "theme": "dark",
             "window": {
                 "width": 900,
                 "height": 700,
@@ -181,14 +180,6 @@ class ConfigManager:
         except Exception as e:
             print(f"❌ Помилка встановлення значення '{key}': {e}")
             return False
-    
-    def get_theme(self) -> str:
-        """Отримання поточної теми."""
-        return self.get('theme', 'dark')
-    
-    def set_theme(self, theme: str):
-        """Збереження теми."""
-        self.set('theme', theme)
     
     def get_window_geometry(self) -> dict:
         """Отримання геометрії вікна."""

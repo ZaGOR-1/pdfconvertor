@@ -24,9 +24,9 @@ class ThemeManager:
             return
         
         self._initialized = True
-        self._current_theme: Literal["dark", "light"] = "dark"
+        self._current_theme: Literal["dark"] = "dark"
         
-        # Визначення кольорових схем для тем
+        # Визначення кольорової схеми (тільки темна тема)
         self._themes = {
             "dark": {
                 # Основні кольори
@@ -70,81 +70,24 @@ class ThemeManager:
                 # Рамки та роздільники
                 "border": "#3e4451",
                 "separator": "#3e4451",
-            },
-            "light": {
-                # Основні кольори
-                "bg_primary": "#f5f6f7",
-                "bg_secondary": "#ffffff",
-                "bg_tertiary": "#e8eaed",
-                
-                # Кольори тексту
-                "text_primary": "#1c1e21",
-                "text_secondary": "#65676b",
-                "text_disabled": "#8a8d91",
-                
-                # Акцентні кольори
-                "accent_primary": "#0d6efd",
-                "accent_hover": "#0b5ed7",
-                "accent_active": "#0a58ca",
-                
-                # Кнопки
-                "button_bg": "#0d6efd",
-                "button_hover": "#0b5ed7",
-                "button_active": "#0a58ca",
-                "button_disabled": "#e4e6eb",
-                
-                # Статуси
-                "success": "#198754",
-                "warning": "#d97706",
-                "error": "#b91c1c",
-                "info": "#0891b2",
-                "settings": "#495057",
-                
-                # Drag & Drop зона
-                "drop_zone_bg": "#f8f9fa",
-                "drop_zone_border": "#0d6efd",
-                "drop_zone_hover": "#e7f1ff",
-                "drop_zone_active": "#0d6efd",
-                
-                # Прогрес бари
-                "progress_bg": "#e9ecef",
-                "progress_fill": "#0d6efd",
-                
-                # Рамки та роздільники
-                "border": "#dadde1",
-                "separator": "#e4e6eb",
             }
         }
     
     @property
-    def current_theme(self) -> Literal["dark", "light"]:
-        """Повертає поточну тему."""
+    def current_theme(self) -> Literal["dark"]:
+        """Повертає поточну тему (завжди dark)."""
         return self._current_theme
     
-    def set_theme(self, theme: Literal["dark", "light"]) -> None:
+    def set_theme(self, theme: Literal["dark"]) -> None:
         """
-        Встановлює тему додатку.
+        Встановлює тему додатку (завжди dark).
         
         Args:
-            theme: Назва теми ("dark" або "light")
+            theme: Назва теми ("тільки dark")
         """
-        if theme not in self._themes:
-            raise ValueError(f"Невідома тема: {theme}")
-        
-        self._current_theme = theme
+        self._current_theme = "dark"
         # Встановити appearance mode для CustomTkinter
-        ctk.set_appearance_mode(theme)
-    
-    def toggle_theme(self) -> Literal["dark", "light"]:
-        """
-        Перемикає між темною та світлою темою.
-        
-        Returns:
-            Нова активна тема
-        """
-        new_theme = "light" if self._current_theme == "dark" else "dark"
-        self.set_theme(new_theme)
-        return new_theme
+        ctk.set_appearance_mode("dark")
     
     def get_color(self, color_name: str) -> str:
         """

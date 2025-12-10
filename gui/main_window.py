@@ -23,7 +23,6 @@ from converter.file_handler import FileHandler
 # Імпорт компонентів GUI
 from gui.components import DropZonePanel, FileListPanel, ControlPanel, StatusPanel
 from gui.theme_manager import ThemeManager
-from gui.widgets import ThemeToggleButton
 from gui.settings_window import SettingsWindow
 
 # Імпорт утиліт
@@ -76,10 +75,9 @@ class MainWindow:
         self.update_checker = UpdateChecker()
         self.recovery_manager = RecoveryManager()
         
-        # Налаштування теми
-        saved_theme = self.config.get_theme()
-        self.theme_manager.set_theme(saved_theme)
-        ctk.set_appearance_mode(saved_theme)
+        # Фіксація темної теми
+        self.theme_manager.set_theme("dark")
+        ctk.set_appearance_mode("dark")
         ctk.set_default_color_theme("blue")
         
         # Ініціалізація конвертера
@@ -195,13 +193,6 @@ class MainWindow:
         self.header_frame = ctk.CTkFrame(self.root, corner_radius=0, fg_color=self.theme_manager.get_color("bg_secondary"))
         self.header_frame.grid(row=0, column=0, sticky="ew", padx=0, pady=0)
         
-        # Theme toggle
-        self.theme_toggle = ThemeToggleButton(
-            self.header_frame,
-            on_toggle=self._on_theme_toggle
-        )
-        self.theme_toggle.place(relx=0.96, rely=0.5, anchor="e")
-        
         # Title
         title_label = ctk.CTkLabel(
             self.header_frame,
@@ -270,18 +261,29 @@ class MainWindow:
             self.update_status(self.i18n.get("status_files_added", count=len(files)))
     
     def _add_files(self, files: List[Path]) -> None:
-        """Додати файли до списку.
+        """Додати файли до списку з перевіркою дублікатів.
         
         Args:
             files: Список шляхів до файлів
         """
         for file_path in files:
+            # Перевірка дублікатів за абсолютним шляхом
+            if self._is_duplicate(file_path):
+                self.logger.info(f"Пропущено дублікат: {file_path.name}")
+                continue
+            
             if file_path not in self.files_list:
                 file_id = str(uuid.uuid4())
                 self.files_list.append(file_path)
                 self.files_dict[file_id] = file_path
                 file_index = len(self.files_list) - 1
                 self.file_list.add_file(file_path, file_index)
+                
+                # Попередження про великі файли
+                is_large, size_mb = FileHandler.is_large_file(file_path)
+                if is_large:
+                    self.update_status(f"⚠️ Великий файл ({size_mb:.1f} MB) - конвертація може зайняти час")
+                    self.logger.warning(f"Додано великий файл: {file_path.name} ({size_mb:.1f} MB)")
     
     def _remove_file(self, file_path: Path, widget, file_index: int) -> None:
         """Видалити файл зі списку.
@@ -354,51 +356,6 @@ class MainWindow:
         if 'max_file_size_mb' in settings:
             FileHandler.set_max_file_size(settings['max_file_size_mb'])
             self.logger.info(f"📏 Максимальний розмір файлу оновлено: {settings['max_file_size_mb']} МБ")
-    
-    def _on_theme_toggle(self, new_theme: str):
-        """Перемикання теми.
-        
-        Args:
-            new_theme: Нова тема ("dark" або "light")
-        """
-        self.theme_manager.set_theme(new_theme)
-        self.config.set_theme(new_theme)
-        ctk.set_appearance_mode(new_theme)
-        
-        # Оновлення кольорів
-        self._refresh_theme()
-        
-        theme_name = self.i18n.get("theme_dark" if new_theme == "dark" else "theme_light")
-        self.update_status(self.i18n.get("status_theme_changed", theme=theme_name))
-        self.logger.log_theme_change(new_theme)
-    
-    def _refresh_theme(self):
-        """Оновлення кольорів всіх компонентів при зміні теми."""
-        # Root та header
-        self.root.configure(bg=self.theme_manager.get_color("bg_primary"))
-        self.header_frame.configure(fg_color=self.theme_manager.get_color("bg_secondary"))
-        
-        # Drop zone
-        if hasattr(self, 'drop_zone') and hasattr(self.drop_zone, 'drop_area'):
-            self.drop_zone.drop_area.configure(
-                border_color=self.theme_manager.get_color("drop_zone_border"),
-                fg_color=self.theme_manager.get_color("drop_zone_bg")
-            )
-        
-        # Buttons
-        if hasattr(self, 'control_panel'):
-            self.control_panel.btn_convert.configure(
-                fg_color=self.theme_manager.get_color("success")
-            )
-            self.control_panel.btn_clear.configure(
-                fg_color=self.theme_manager.get_color("warning")
-            )
-            self.control_panel.btn_select_folder.configure(
-                fg_color=self.theme_manager.get_color("info")
-            )
-            self.control_panel.btn_settings.configure(
-                fg_color=self.theme_manager.get_color("settings")
-            )
     
     def _on_convert(self):
         """Початок конвертації."""
@@ -485,13 +442,33 @@ class MainWindow:
                 if not auto_number and output_path.exists():
                     ask_overwrite = self.config.get("conversion.ask_overwrite", True)
                     if ask_overwrite:
-                        # Пропускаємо файл, якщо він вже існує
-                        self.root.after(0, lambda idx=i: self.file_list.update_status(idx, "⚠️ Файл існує"))
-                        self.root.after(0, lambda idx=i: self.file_list.hide_progress(idx))
-                        self.logger.warning(f"Файл вже існує і буде пропущений: {output_path}")
-                        fail_count += 1
-                        failed_indices.append(i)
-                        continue
+                        # Запитати користувача про перезапис (в головному потоці)
+                        overwrite_result = [None]  # Список для передачі результату між потоками
+                        
+                        def ask_user():
+                            result = messagebox.askyesno(
+                                "Файл існує",
+                                f"PDF файл вже існує:\n{output_path.name}\n\nПерезаписати його?",
+                                icon='question'
+                            )
+                            overwrite_result[0] = result
+                        
+                        self.root.after(0, ask_user)
+                        
+                        # Чекаємо на відповідь користувача
+                        while overwrite_result[0] is None:
+                            time.sleep(0.1)
+                        
+                        if not overwrite_result[0]:
+                            # Користувач відмовився перезаписувати
+                            self.root.after(0, lambda idx=i: self.file_list.update_status(idx, "⏭️ Пропущено"))
+                            self.root.after(0, lambda idx=i: self.file_list.hide_progress(idx))
+                            self.logger.info(f"Користувач пропустив файл: {output_path}")
+                            fail_count += 1
+                            failed_indices.append(i)
+                            continue
+                        # Якщо користувач погодився - продовжуємо конвертацію
+                    # Якщо ask_overwrite=False - перезаписуємо без питань
                 
                 # Перевірка диску
                 if self.output_folder:
@@ -571,6 +548,25 @@ class MainWindow:
         self.update_status(self.i18n.get("status_conversion_complete", success=success, failed=failed))
     
     # === Utility Methods ===
+    
+    def _is_duplicate(self, file_path: Path) -> bool:
+        """Перевірка, чи є файл дублікатом.
+        
+        Args:
+            file_path: Шлях до файлу
+            
+        Returns:
+            True якщо файл вже є в списку
+        """
+        try:
+            resolved_path = file_path.resolve()
+            for existing_file in self.files_list:
+                if existing_file.resolve() == resolved_path:
+                    return True
+            return False
+        except:
+            # Якщо не вдалося resolve, використовуємо просту перевірку
+            return file_path in self.files_list
     
     def _calculate_optimal_workers(self) -> int:
         """Розрахунок оптимальної кількості workers."""
@@ -725,6 +721,7 @@ class MainWindow:
         """
         self.file_list.update_status(idx, self.i18n.get("file_completed"))
         self.file_list.hide_progress(idx)
+        self.file_list.show_open_button(idx)  # Показати кнопку відкриття PDF
     
     def _update_file_failed(self, idx: int) -> None:
         """Оновити статус невдалої конвертації.

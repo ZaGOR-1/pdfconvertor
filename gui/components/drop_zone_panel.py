@@ -105,7 +105,7 @@ class DropZonePanel(ctk.CTkFrame):
             drop_content,
             text=self.i18n.get("drop_zone_formats"),
             font=ctk.CTkFont(size=10),
-            text_color=("gray50", "gray60"),
+            text_color=self.theme_manager.get_color("text_secondary"),
             cursor="hand2"
         )
         formats_label.pack(pady=(0, 20))

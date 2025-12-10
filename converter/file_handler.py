@@ -19,6 +19,7 @@ class FileHandler:
     
     SUPPORTED_EXTENSIONS = {'.doc', '.docx'}
     MAX_FILE_SIZE_MB = 100
+    LARGE_FILE_THRESHOLD_MB = 50  # Поріг для попередження про великі файли
     CACHE_TTL_SECONDS = 300  # 5 хвилин
     CACHE_MAX_SIZE = 1000
     
@@ -45,6 +46,22 @@ class FileHandler:
             True, якщо файл має підтримуване розширення
         """
         return file_path.suffix.lower() in FileHandler.SUPPORTED_EXTENSIONS
+    
+    @staticmethod
+    def is_large_file(file_path: Path) -> Tuple[bool, float]:
+        """Перевірка, чи є файл великим.
+        
+        Args:
+            file_path: Шлях до файлу
+            
+        Returns:
+            Tuple[bool, float]: (є великим, розмір в MB)
+        """
+        try:
+            size_mb = file_path.stat().st_size / (1024 * 1024)
+            return size_mb > FileHandler.LARGE_FILE_THRESHOLD_MB, size_mb
+        except:
+            return False, 0.0
     
     @staticmethod
     def check_disk_space(directory: Path, required_mb: float = 10) -> Tuple[bool, str]:

@@ -75,7 +75,9 @@ class FileListPanel(ctk.CTkFrame):
         file_frame = ctk.CTkFrame(
             self.files_scroll,
             corner_radius=8,
-            fg_color=self.theme_manager.get_color("bg_secondary")
+            fg_color=self.theme_manager.get_color("bg_secondary"),
+            border_width=1,
+            border_color=self.theme_manager.get_color("border")
         )
         file_frame.grid(sticky="ew", padx=5, pady=3)
         file_frame.grid_columnconfigure(1, weight=1)
@@ -85,6 +87,7 @@ class FileListPanel(ctk.CTkFrame):
             file_frame,
             text=self.i18n.get("icon_document"),
             font=ctk.CTkFont(size=20),
+            text_color=self.theme_manager.get_color("text_primary"),
             width=40
         )
         icon_label.grid(row=0, column=0, padx=(10, 5), pady=10, rowspan=2)
@@ -94,6 +97,7 @@ class FileListPanel(ctk.CTkFrame):
             file_frame,
             text=file_path.name,
             font=ctk.CTkFont(size=13),
+            text_color=self.theme_manager.get_color("text_primary"),
             anchor="w"
         )
         name_label.grid(row=0, column=1, sticky="w", padx=5, pady=(10, 0))
@@ -104,7 +108,7 @@ class FileListPanel(ctk.CTkFrame):
             file_frame,
             text=size_text,
             font=ctk.CTkFont(size=11),
-            text_color=("gray50", "gray60"),
+            text_color=self.theme_manager.get_color("text_secondary"),
             width=80
         )
         size_label.grid(row=0, column=2, padx=5, pady=10, rowspan=2)
@@ -130,6 +134,19 @@ class FileListPanel(ctk.CTkFrame):
         progress_bar.grid_remove()
         self.file_progress_bars[file_index] = progress_bar
         
+        # Кнопка відкриття PDF (спочатку схована)
+        open_btn = ctk.CTkButton(
+            file_frame,
+            text="📄",
+            width=30,
+            height=30,
+            fg_color=self.theme_manager.get_color("success"),
+            hover_color=self.theme_manager.get_color("success"),
+            command=lambda: self._open_pdf(file_path)
+        )
+        open_btn.grid(row=0, column=4, padx=(5, 5), pady=10, rowspan=2)
+        open_btn.grid_remove()  # Спочатку схована
+        
         # Кнопка видалення
         delete_btn = ctk.CTkButton(
             file_frame,
@@ -140,10 +157,11 @@ class FileListPanel(ctk.CTkFrame):
             hover_color=self.theme_manager.get_color("error"),
             command=lambda: self.on_remove_file(file_path, file_frame, file_index)
         )
-        delete_btn.grid(row=0, column=4, padx=10, pady=10, rowspan=2)
+        delete_btn.grid(row=0, column=5, padx=10, pady=10, rowspan=2)
         
-        # Зберігаємо посилання на віджет
+        # Зберігаємо посилання на віджет та кнопки
         self.file_widgets.append(file_frame)
+        file_frame.open_btn = open_btn
         
         # Зберігаємо label статусу для подальшого оновлення
         file_frame.status_label = status_label
@@ -192,6 +210,41 @@ class FileListPanel(ctk.CTkFrame):
             progress_bar = self.file_progress_bars[file_index]
             progress_bar.stop()
             progress_bar.grid_remove()
+    
+    def _open_pdf(self, file_path: Path) -> None:
+        """Відкрити PDF файл.
+        
+        Args:
+            file_path: Шлях до вихідного Word файлу
+        """
+        try:
+            import os
+            import subprocess
+            
+            # Шлях до PDF (замінюємо розширення)
+            pdf_path = file_path.with_suffix('.pdf')
+            
+            if pdf_path.exists():
+                # Відкриття PDF за замовчуванням
+                if os.name == 'nt':  # Windows
+                    os.startfile(str(pdf_path))
+                else:  # Linux/Mac
+                    subprocess.run(['xdg-open', str(pdf_path)])
+            else:
+                print(f"PDF файл не знайдено: {pdf_path}")
+        except Exception as e:
+            print(f"Помилка відкриття PDF: {e}")
+    
+    def show_open_button(self, file_index: int) -> None:
+        """Показати кнопку відкриття PDF.
+        
+        Args:
+            file_index: Індекс файлу
+        """
+        if file_index < len(self.file_widgets):
+            widget = self.file_widgets[file_index]
+            if hasattr(widget, 'open_btn'):
+                widget.open_btn.grid()
     
     def update_status(self, file_index: int, status: str):
         """Оновити статус файлу.
