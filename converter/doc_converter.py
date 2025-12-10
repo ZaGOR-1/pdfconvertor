@@ -199,6 +199,7 @@ class DocConverter:
             try:
                 if doc is not None:
                     doc.Close(SaveChanges=False)
+                    del doc
                     doc = None
             except:
                 pass
@@ -206,6 +207,7 @@ class DocConverter:
             try:
                 if word is not None:
                     word.Quit()
+                    del word
                     word = None
             except:
                 pass

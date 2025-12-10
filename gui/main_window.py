@@ -5,7 +5,7 @@ Main Window - GUI для Word to PDF Converter (Модульна версія)
 Головне вікно програми як координатор компонентів.
 """
 
-from typing import Optional, List
+from typing import Optional, List, Dict
 import customtkinter as ctk
 from pathlib import Path
 from tkinterdnd2 import TkinterDnD
@@ -14,6 +14,7 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 import webbrowser
+import uuid
 
 # Імпорт модулів конвертації
 from converter.doc_converter import DocConverter
@@ -36,6 +37,12 @@ from utils.recovery_manager import RecoveryManager
 class MainWindow:
     """Головне вікно - координатор компонентів."""
     
+    # Константи
+    RECOVERY_CHECK_DELAY_MS = 500
+    UPDATE_CHECK_DELAY_MS = 1000
+    PROGRESS_BAR_HIDE_DELAY_MS = 500
+    EXECUTOR_SHUTDOWN_TIMEOUT = 5
+    
     def __init__(self):
         """Ініціалізація головного вікна."""
         # Ініціалізація сервісів
@@ -49,15 +56,16 @@ class MainWindow:
         
         # Ініціалізація даних
         self.files_list: List[Path] = []
+        self.files_dict: Dict[str, Path] = {}  # UUID -> Path mapping
         self.output_folder: Optional[Path] = None
         self.is_converting = False
         self.stop_conversion = False
         self.conversion_thread: Optional[threading.Thread] = None
         
         # Перевірка відновлення та оновлень
-        self.root.after(500, self._check_recovery)
+        self.root.after(self.RECOVERY_CHECK_DELAY_MS, self._check_recovery)
         if self.config.get('general.check_updates', True):
-            self.root.after(1000, self._check_updates)
+            self.root.after(self.UPDATE_CHECK_DELAY_MS, self._check_updates)
     
     def _init_services(self):
         """Ініціалізація сервісів та утиліт."""
@@ -213,8 +221,12 @@ class MainWindow:
     
     # === Event Handlers ===
     
-    def _handle_files_dropped(self, paths: List[Path]):
-        """Обробка файлів після drop."""
+    def _handle_files_dropped(self, paths: List[Path]) -> None:
+        """Обробка файлів після drop.
+        
+        Args:
+            paths: Список шляхів до файлів або директорій
+        """
         word_files = []
         directories = []
         
@@ -257,25 +269,43 @@ class MainWindow:
             self.logger.info(f"Користувач додав {len(files)} файл(ів) через діалог")
             self.update_status(self.i18n.get("status_files_added", count=len(files)))
     
-    def _add_files(self, files: List[Path]):
-        """Додати файли до списку."""
+    def _add_files(self, files: List[Path]) -> None:
+        """Додати файли до списку.
+        
+        Args:
+            files: Список шляхів до файлів
+        """
         for file_path in files:
             if file_path not in self.files_list:
+                file_id = str(uuid.uuid4())
                 self.files_list.append(file_path)
+                self.files_dict[file_id] = file_path
                 file_index = len(self.files_list) - 1
                 self.file_list.add_file(file_path, file_index)
     
-    def _remove_file(self, file_path: Path, widget, file_index: int):
-        """Видалити файл зі списку."""
+    def _remove_file(self, file_path: Path, widget, file_index: int) -> None:
+        """Видалити файл зі списку.
+        
+        Args:
+            file_path: Шлях до файлу
+            widget: Віджет файлу
+            file_index: Індекс файлу
+        """
         if file_path in self.files_list:
             self.files_list.remove(file_path)
+            # Видалення з словника UUID
+            for file_id, path in list(self.files_dict.items()):
+                if path == file_path:
+                    del self.files_dict[file_id]
+                    break
         
         self.file_list.remove_file(widget, file_index)
         self.update_status(self.i18n.get("status_file_removed", name=file_path.name))
     
-    def _on_clear(self):
+    def _on_clear(self) -> None:
         """Очистити список файлів."""
         self.files_list.clear()
+        self.files_dict.clear()
         self.file_list.clear_all()
         self.update_status(self.i18n.get("status_list_cleared"))
         self.logger.info("Список файлів очищено")
@@ -419,95 +449,98 @@ class MainWindow:
             self.stop_conversion = True
             self.update_status(self.i18n.get("status_stopping"))
     
-    def _perform_conversion(self):
+    def _perform_conversion(self) -> None:
         """Виконання конвертації (в окремому потоці)."""
-        start_time = time.time()
-        success_count = 0
-        fail_count = 0
-        processed_indices = []
-        failed_indices = []
-        
-        self.logger.log_batch_start(len(self.files_list))
-        
-        for i, file_path in enumerate(self.files_list):
-            if self.stop_conversion:
-                break
+        try:
+            start_time = time.time()
+            success_count = 0
+            fail_count = 0
+            processed_indices = []
+            failed_indices = []
             
-            # Прогрес
-            progress = i / len(self.files_list)
-            self.root.after(0, lambda p=progress: self.control_panel.set_progress(p))
+            self.logger.log_batch_start(len(self.files_list))
             
-            # Показати прогрес файлу
-            self.root.after(0, lambda idx=i: self.file_list.show_progress(idx))
-            self.root.after(0, lambda idx=i: self.file_list.update_status(idx, self.i18n.get("file_converting")))
-            
-            # Валідація
-            is_valid, error_msg = FileHandler.validate_file(file_path)
-            
-            if not is_valid:
-                self.root.after(0, lambda idx=i, msg=error_msg: self.file_list.update_status(idx, f"❌ {msg}"))
-                self.root.after(0, lambda idx=i: self.file_list.hide_progress(idx))
-                fail_count += 1
-                failed_indices.append(i)
-                continue
-            
-            # Конвертація
-            auto_number = self.config.get("conversion.auto_number_files", False)
-            output_path = FileHandler.get_output_path(file_path, self.output_folder, auto_number=auto_number)
-            
-            # Перевірка існування файлу (тільки якщо не auto_number)
-            if not auto_number and output_path.exists():
-                ask_overwrite = self.config.get("conversion.ask_overwrite", True)
-                if ask_overwrite:
-                    # Пропускаємо файл, якщо він вже існує
-                    self.root.after(0, lambda idx=i: self.file_list.update_status(idx, "⚠️ Файл існує"))
-                    self.root.after(0, lambda idx=i: self.file_list.hide_progress(idx))
-                    self.logger.warning(f"Файл вже існує і буде пропущений: {output_path}")
-                    fail_count += 1
-                    failed_indices.append(i)
-                    continue
-            
-            # Перевірка диску
-            if self.output_folder:
-                estimated_size = FileHandler.estimate_pdf_size(file_path)
-                has_space, space_msg = FileHandler.check_disk_space(self.output_folder, estimated_size)
+            for i, file_path in enumerate(self.files_list):
+                if self.stop_conversion:
+                    break
                 
-                if not has_space:
-                    self.root.after(0, lambda idx=i, msg=space_msg: self.file_list.update_status(idx, f"❌ {msg}"))
-                    self.root.after(0, lambda idx=i: self.file_list.hide_progress(idx))
+                # Прогрес (об'єднані оновлення UI)
+                progress = i / len(self.files_list)
+                self.root.after(0, lambda p=progress, idx=i: self._update_file_progress(idx, p, True))
+                
+                # Валідація
+                is_valid, error_msg = FileHandler.validate_file(file_path)
+                
+                if not is_valid:
+                    self.root.after(0, lambda idx=i, msg=error_msg: self._update_file_error(idx, msg))
                     fail_count += 1
                     failed_indices.append(i)
                     continue
-            
-            self.logger.log_conversion_start(str(file_path), str(output_path))
-            success, message = self.converter.convert_to_pdf(file_path, output_path)
-            
-            if success:
-                self.root.after(0, lambda idx=i: self.file_list.update_status(idx, self.i18n.get("file_completed")))
-                success_count += 1
-                processed_indices.append(i)
-            else:
-                self.root.after(0, lambda idx=i: self.file_list.update_status(idx, self.i18n.get("file_failed")))
-                fail_count += 1
-                failed_indices.append(i)
-            
-            self.root.after(0, lambda idx=i: self.file_list.hide_progress(idx))
-            
-            # Збереження стану recovery
-            if (i + 1) % 5 == 0:
-                self.recovery_manager.save_state(self.files_list, self.output_folder, processed_indices, failed_indices)
+                
+                # Конвертація
+                auto_number = self.config.get("conversion.auto_number_files", False)
+                output_path = FileHandler.get_output_path(file_path, self.output_folder, auto_number=auto_number)
+                
+                # Перевірка існування файлу (тільки якщо не auto_number)
+                if not auto_number and output_path.exists():
+                    ask_overwrite = self.config.get("conversion.ask_overwrite", True)
+                    if ask_overwrite:
+                        # Пропускаємо файл, якщо він вже існує
+                        self.root.after(0, lambda idx=i: self.file_list.update_status(idx, "⚠️ Файл існує"))
+                        self.root.after(0, lambda idx=i: self.file_list.hide_progress(idx))
+                        self.logger.warning(f"Файл вже існує і буде пропущений: {output_path}")
+                        fail_count += 1
+                        failed_indices.append(i)
+                        continue
+                
+                # Перевірка диску
+                if self.output_folder:
+                    estimated_size = FileHandler.estimate_pdf_size(file_path)
+                    has_space, space_msg = FileHandler.check_disk_space(self.output_folder, estimated_size)
+                    
+                    if not has_space:
+                        self.root.after(0, lambda idx=i, msg=space_msg: self.file_list.update_status(idx, f"❌ {msg}"))
+                        self.root.after(0, lambda idx=i: self.file_list.hide_progress(idx))
+                        fail_count += 1
+                        failed_indices.append(i)
+                        continue
+                
+                self.logger.log_conversion_start(str(file_path), str(output_path))
+                success, message = self.converter.convert_to_pdf(file_path, output_path)
+                
+                if success:
+                    self.root.after(0, lambda idx=i: self._update_file_complete(idx))
+                    success_count += 1
+                    processed_indices.append(i)
+                else:
+                    self.root.after(0, lambda idx=i: self._update_file_failed(idx))
+                    fail_count += 1
+                    failed_indices.append(i)
+                
+                # Збереження стану recovery
+                if (i + 1) % 5 == 0:
+                    self.recovery_manager.save_state(self.files_list, self.output_folder, processed_indices, failed_indices)
         
-        # Завершення
-        elapsed_time = time.time() - start_time
-        self.logger.log_batch_complete(success_count, fail_count, elapsed_time)
-        self.recovery_manager.clear_state()
-        
-        self.root.after(0, lambda: self._finish_conversion(success_count, fail_count, elapsed_time))
+            # Завершення
+            elapsed_time = time.time() - start_time
+            self.logger.log_batch_complete(success_count, fail_count, elapsed_time)
+            self.recovery_manager.clear_state()
+            
+            self.root.after(0, lambda: self._finish_conversion(success_count, fail_count, elapsed_time))
+        except Exception as e:
+            self.logger.error(f"Критична помилка конвертації: {e}")
+            self.root.after(0, lambda: self._finish_conversion(0, len(self.files_list), 0))
     
-    def _finish_conversion(self, success: int, failed: int, elapsed_time: float):
-        """Завершення конвертації."""
+    def _finish_conversion(self, success: int, failed: int, elapsed_time: float) -> None:
+        """Завершення конвертації.
+        
+        Args:
+            success: Кількість успішних конвертацій
+            failed: Кількість невдалих конвертацій
+            elapsed_time: Час виконання в секундах
+        """
         self.control_panel.set_progress(1.0)
-        self.root.after(500, lambda: self.control_panel.hide_progress_bar())
+        self.root.after(self.PROGRESS_BAR_HIDE_DELAY_MS, lambda: self.control_panel.hide_progress_bar())
         
         self.is_converting = False
         self.control_panel.set_converting_state(False)
@@ -584,13 +617,16 @@ class MainWindow:
                 
                 self.recovery_manager.clear_state()
     
-    def _check_updates(self):
-        """Перевірка оновлень."""
+    def _check_updates(self) -> None:
+        """Перевірка оновлень з обробкою помилок мережі."""
         def on_update_check(has_update, new_version, url):
             if has_update and new_version and url:
                 self.root.after(0, lambda: self._show_update_dialog(new_version, url))
         
-        self.update_checker.check_for_updates_async(on_update_check)
+        try:
+            self.update_checker.check_for_updates_async(on_update_check)
+        except Exception as e:
+            self.logger.warning(f"Не вдалося перевірити оновлення: {e}")
     
     def _show_update_dialog(self, new_version: str, url: str):
         """Показати діалог оновлення."""
@@ -607,27 +643,97 @@ class MainWindow:
             webbrowser.open(url)
             self.logger.info(f"Користувач перейшов на сторінку завантаження: {url}")
     
-    def _on_closing(self):
-        """Обробка закриття вікна."""
-        # Збереження геометрії
-        geometry_str = self.root.geometry()
-        parts = geometry_str.split('+')
-        size_parts = parts[0].split('x')
+    def _on_closing(self) -> None:
+        """Обробка закриття вікна з graceful shutdown."""
+        # Перевірка активної конвертації
+        if self.is_converting:
+            result = messagebox.askyesno(
+                "Конвертація в процесі",
+                "Зупинити конвертацію та вийти?"
+            )
+            if not result:
+                return
+            
+            self.stop_conversion = True
+            if self.conversion_thread and self.conversion_thread.is_alive():
+                self.logger.info("Очікування завершення потоку конвертації...")
+                self.conversion_thread.join(timeout=self.EXECUTOR_SHUTDOWN_TIMEOUT)
         
-        self.config.set_window_geometry(
-            int(size_parts[0]),
-            int(size_parts[1]),
-            int(parts[1]) if len(parts) > 1 else 0,
-            int(parts[2]) if len(parts) > 2 else 0
-        )
+        # Зупинка executor
+        if hasattr(self, 'executor'):
+            self.logger.info("Зупинка ThreadPoolExecutor...")
+            try:
+                self.executor.shutdown(wait=True, timeout=self.EXECUTOR_SHUTDOWN_TIMEOUT)
+            except Exception as e:
+                self.logger.warning(f"Помилка зупинки executor: {e}")
+        
+        # Збереження геометрії
+        try:
+            geometry_str = self.root.geometry()
+            parts = geometry_str.split('+')
+            size_parts = parts[0].split('x')
+            
+            self.config.set_window_geometry(
+                int(size_parts[0]),
+                int(size_parts[1]),
+                int(parts[1]) if len(parts) > 1 else 0,
+                int(parts[2]) if len(parts) > 2 else 0
+            )
+        except Exception as e:
+            self.logger.warning(f"Помилка збереження геометрії: {e}")
         
         self.logger.log_app_exit()
         self.root.destroy()
     
-    def update_status(self, message: str):
-        """Оновити статус."""
+    def update_status(self, message: str) -> None:
+        """Оновити статус.
+        
+        Args:
+            message: Текст повідомлення
+        """
         self.status_panel.update_status(message)
         self.root.update_idletasks()
+    
+    def _update_file_progress(self, idx: int, progress: float, show: bool) -> None:
+        """Оновити прогрес файлу (об'єднана функція).
+        
+        Args:
+            idx: Індекс файлу
+            progress: Прогрес (0-1)
+            show: Показати прогрес бар
+        """
+        if show:
+            self.file_list.show_progress(idx)
+        self.file_list.update_status(idx, self.i18n.get("file_converting"))
+        self.control_panel.set_progress(progress)
+    
+    def _update_file_error(self, idx: int, error_msg: str) -> None:
+        """Оновити статус помилки файлу.
+        
+        Args:
+            idx: Індекс файлу
+            error_msg: Повідомлення про помилку
+        """
+        self.file_list.update_status(idx, f"❌ {error_msg}")
+        self.file_list.hide_progress(idx)
+    
+    def _update_file_complete(self, idx: int) -> None:
+        """Оновити статус успішного завершення.
+        
+        Args:
+            idx: Індекс файлу
+        """
+        self.file_list.update_status(idx, self.i18n.get("file_completed"))
+        self.file_list.hide_progress(idx)
+    
+    def _update_file_failed(self, idx: int) -> None:
+        """Оновити статус невдалої конвертації.
+        
+        Args:
+            idx: Індекс файлу
+        """
+        self.file_list.update_status(idx, self.i18n.get("file_failed"))
+        self.file_list.hide_progress(idx)
     
     def run(self):
         """Запуск програми."""

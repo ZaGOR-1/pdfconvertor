@@ -348,7 +348,6 @@ class SettingsWindow(ctk.CTkToplevel):
             # Отримання поточної геометрії
             geometry = self.geometry()
             # Формат: "WIDTHxHEIGHT+X+Y" або "WIDTHxHEIGHT-X-Y"
-            print(f"Debug: geometry = {geometry}")
             
             # Парсинг геометрії
             # Розділяємо на розмір та позицію
@@ -370,7 +369,7 @@ class SettingsWindow(ctk.CTkToplevel):
                 coords = [int(x) for x in pos_part.split()]
                 x, y = coords[0], coords[1] if len(coords) > 1 else coords[0]
                 
-                print(f"Debug: width={width}, height={height}, x={x}, y={y}")
+                # Збереження: width={width}, height={height}, x={x}, y={y}
                 
                 # Збереження позиції та розмірів
                 self.config.set("settings_window.x", x)
@@ -381,7 +380,9 @@ class SettingsWindow(ctk.CTkToplevel):
                 # Примусове збереження конфігурації
                 self.config.save()
         except Exception as e:
-            print(f"Помилка збереження геометрії вікна налаштувань: {e}")
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Помилка збереження геометрії вікна налаштувань: {e}")
             import traceback
             traceback.print_exc()
         

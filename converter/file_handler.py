@@ -10,6 +10,7 @@ from typing import Optional, Tuple, List, Dict
 import os
 import zipfile
 import shutil
+import time
 from functools import lru_cache
 
 
@@ -18,8 +19,10 @@ class FileHandler:
     
     SUPPORTED_EXTENSIONS = {'.doc', '.docx'}
     MAX_FILE_SIZE_MB = 100
+    CACHE_TTL_SECONDS = 300  # 5 хвилин
+    CACHE_MAX_SIZE = 1000
     
-    # Кеш для результатів валідації
+    # Кеш для результатів валідації з TTL
     _validation_cache: Dict[str, Tuple[bool, str, float]] = {}
     
     @classmethod
@@ -103,10 +106,12 @@ class FileHandler:
                 
                 if cache_key in FileHandler._validation_cache:
                     cached_valid, cached_msg, cached_time = FileHandler._validation_cache[cache_key]
-                    # Кеш дійсний протягом 60 секунд
-                    import time
-                    if time.time() - cached_time < 60:
+                    # Перевірка TTL
+                    if time.time() - cached_time < FileHandler.CACHE_TTL_SECONDS:
                         return cached_valid, cached_msg
+                    else:
+                        # Видалення застарілого запису
+                        del FileHandler._validation_cache[cache_key]
             except:
                 pass
         
@@ -141,18 +146,29 @@ class FileHandler:
         # Збереження в кеш
         if use_cache:
             try:
-                import time
                 mtime = file_path.stat().st_mtime
                 cache_key = f"{file_path}_{mtime}"
                 FileHandler._validation_cache[cache_key] = (result[0], result[1], time.time())
                 
-                # Обмеження розміру кешу (max 1000 елементів)
-                if len(FileHandler._validation_cache) > 1000:
-                    # Видалення найстаріших записів
-                    oldest_keys = sorted(FileHandler._validation_cache.keys(), 
-                                       key=lambda k: FileHandler._validation_cache[k][2])[:500]
-                    for key in oldest_keys:
+                # Очищення застарілих та обмеження розміру кешу
+                if len(FileHandler._validation_cache) > FileHandler.CACHE_MAX_SIZE:
+                    current_time = time.time()
+                    # Видалення записів старших за TTL
+                    expired_keys = [
+                        k for k, v in FileHandler._validation_cache.items()
+                        if current_time - v[2] > FileHandler.CACHE_TTL_SECONDS
+                    ]
+                    for key in expired_keys:
                         del FileHandler._validation_cache[key]
+                    
+                    # Якщо ще багато - видалити найстаріші
+                    if len(FileHandler._validation_cache) > FileHandler.CACHE_MAX_SIZE:
+                        oldest_keys = sorted(
+                            FileHandler._validation_cache.keys(),
+                            key=lambda k: FileHandler._validation_cache[k][2]
+                        )[:FileHandler.CACHE_MAX_SIZE // 2]
+                        for key in oldest_keys:
+                            del FileHandler._validation_cache[key]
             except:
                 pass
         
