@@ -111,7 +111,7 @@ class FileListPanel(ctk.CTkFrame):
         
         # Статус
         status_label = ctk.CTkLabel(
-            file_widget,
+            file_frame,
             text=self.i18n.get("file_waiting"),
             font=ctk.CTkFont(size=11),
             text_color=self.theme_manager.get_color("text_secondary"),
