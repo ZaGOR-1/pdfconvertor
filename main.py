@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 from gui.main_window import MainWindow
 import traceback
+from utils.logger import Logger
 
 
 def main():
@@ -24,12 +25,19 @@ def main():
 
 
 if __name__ == "__main__":
+    logger = None
     try:
+        logger = Logger()
+        logger.info("Запуск програми")
         main()
     except KeyboardInterrupt:
         print("\n\n⚠️  Програму зупинено користувачем.")
+        if logger:
+            logger.info("Програму зупинено користувачем (Ctrl+C)")
         sys.exit(0)
     except Exception as e:
-        print(f"\n\n❌ Помилка: {e}")
+        error_msg = f"Критична помилка: {e}"
+        print(f"\n\n❌ {error_msg}")
         traceback.print_exc()
-        sys.exit(1)
+        if logger:
+            logger.error(error_msg, exc_info=True)

@@ -6,7 +6,7 @@ Control Panel - Панель керування
 """
 
 import customtkinter as ctk
-from typing import Callable, Optional
+from typing import Callable, Optional, Any
 
 
 class ControlPanel(ctk.CTkFrame):
@@ -14,16 +14,16 @@ class ControlPanel(ctk.CTkFrame):
     
     def __init__(
         self,
-        parent,
-        on_convert: Callable,
-        on_clear: Callable,
-        on_select_folder: Callable,
-        on_settings: Callable,
-        on_pause: Optional[Callable] = None,  # #24 Додано callback для паузи
-        theme_manager=None,
-        i18n=None,
+        parent: Any,
+        on_convert: Callable[[], None],
+        on_clear: Callable[[], None],
+        on_select_folder: Callable[[], None],
+        on_settings: Callable[[], None],
+        on_pause: Optional[Callable[[], None]] = None,  # #24 Додано callback для паузи
+        theme_manager: Optional[Any] = None,
+        i18n: Optional[Any] = None,
         **kwargs
-    ):
+    ) -> None:
         """Ініціалізація панелі управління.
         
         Args:
@@ -38,11 +38,11 @@ class ControlPanel(ctk.CTkFrame):
         """
         super().__init__(parent, **kwargs)
         
-        self.on_convert = on_convert
-        self.on_clear = on_clear
-        self.on_select_folder = on_select_folder
-        self.on_settings = on_settings
-        self.on_pause = on_pause  # #24
+        self.on_convert: Callable[[], None] = on_convert
+        self.on_clear: Callable[[], None] = on_clear
+        self.on_select_folder: Callable[[], None] = on_select_folder
+        self.on_settings: Callable[[], None] = on_settings
+        self.on_pause: Optional[Callable[[], None]] = on_pause  # #24
         self.theme_manager = theme_manager
         self.i18n = i18n
         

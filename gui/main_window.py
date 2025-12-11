@@ -95,10 +95,14 @@ class MainWindow:
         max_file_size = self.config.get('conversion.max_file_size_mb', 100)
         FileHandler.set_max_file_size(max_file_size)
         
-        # ThreadPool
+        # ThreadPool з обмеженням ресурсів
         max_workers = self._calculate_optimal_workers()
         self.logger.info(f"Ініціалізація ThreadPool з {max_workers} worker(s)")
-        self.executor = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="converter")
+        # Обмежуємо до 4 одночасних конвертацій для уникнення перевантаження
+        self.executor = ThreadPoolExecutor(
+            max_workers=min(max_workers, 4), 
+            thread_name_prefix="converter"
+        )
         
         self.logger.log_app_start()
     

@@ -12,7 +12,8 @@ class ConfigManager:
     """Singleton клас для управління конфігурацією програми."""
     
     _instance = None
-    _config_file = Path("config.json")
+    # Використовуємо абсолютний шлях відносно основного файлу
+    _config_file = Path(__file__).parent.parent / "config.json"
     
     def __new__(cls):
         if cls._instance is None:

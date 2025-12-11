@@ -15,7 +15,7 @@ import os
 class DocConverter:
     """Клас для конвертації Word документів у PDF."""
     
-    def __init__(self, compression_settings: Optional[Dict[str, Any]] = None):
+    def __init__(self, compression_settings: Optional[Dict[str, Any]] = None, use_word_pool: bool = True):
         """Ініціалізація конвертера.
         
         Args:
@@ -24,13 +24,28 @@ class DocConverter:
                     'enable_compression': bool,
                     'compression_level': int (1-9)
                 }
+            use_word_pool: Використовувати пул COM об'єктів для DOC файлів
         """
         self.logger = logging.getLogger(__name__)
         self.is_windows = platform.system() == "Windows"
+        self.use_word_pool = use_word_pool and self.is_windows
         self.compression_settings = compression_settings or {
             'enable_compression': False,
             'compression_level': 6
         }
+        
+        # Ініціалізація пулу Word при необхідності
+        if self.use_word_pool:
+            try:
+                from converter.word_pool import get_word_pool
+                self._word_pool = get_word_pool(pool_size=2)
+                self.logger.info("Використовується пул COM об'єктів Word")
+            except Exception as e:
+                self.logger.warning(f"Не вдалося ініціалізувати пул Word: {e}. Використовується стандартний режим")
+                self.use_word_pool = False
+                self._word_pool = None
+        else:
+            self._word_pool = None
         
     def convert_to_pdf(
         self, 
@@ -136,6 +151,98 @@ class DocConverter:
         if not self.is_windows:
             return False, "Конвертація .doc файлів підтримується тільки на Windows"
         
+        # Використання пулу якщо доступний
+        if self.use_word_pool and self._word_pool:
+            return self._convert_doc_with_pool(input_path, output_path)
+        else:
+            return self._convert_doc_direct(input_path, output_path)
+    
+    def _convert_doc_with_pool(
+        self, 
+        input_path: Path, 
+        output_path: Path
+    ) -> Tuple[bool, str]:
+        """Конвертація DOC з використанням пулу Word.
+        
+        Args:
+            input_path: Шлях до DOC файлу
+            output_path: Шлях до вихідного PDF
+            
+        Returns:
+            Tuple[bool, str]: (успіх, повідомлення)
+        """
+        try:
+            import pywintypes
+            
+            # Константи для Word
+            wdFormatPDF = 17
+            wdDoNotSaveChanges = 0
+            
+            with self._word_pool.get_word() as word:
+                doc = None
+                try:
+                    # Відключення макросів для безпеки
+                    try:
+                        # wdDisableMacros = 2
+                        word.AutomationSecurity = 3  # msoAutomationSecurityForceDisable
+                        self.logger.debug("Макроси відключені для безпеки")
+                    except Exception as e:
+                        self.logger.warning(f"Не вдалося відключити макроси: {e}")
+                    
+                    # Відкриття документа без макросів
+                    doc = word.Documents.Open(
+                        str(input_path.absolute()),
+                        ConfirmConversions=False,
+                        ReadOnly=True,
+                        AddToRecentFiles=False,
+                        NoEncodingDialog=True,
+                        OpenAndRepair=False
+                    )
+                    
+                    # Збереження як PDF
+                    doc.SaveAs(
+                        str(output_path.absolute()), 
+                        FileFormat=wdFormatPDF,
+                        EmbedTrueTypeFonts=True
+                    )
+                    
+                    return True, f"✅ Успішно конвертовано: {output_path.name}"
+                    
+                except pywintypes.com_error as e:
+                    self.logger.error(f"Помилка конвертації {input_path.name}: {e}")
+                    return False, f"Не вдалося конвертувати документ"
+                    
+                finally:
+                    # Закриття документа
+                    if doc is not None:
+                        try:
+                            doc.Close(SaveChanges=wdDoNotSaveChanges)
+                        except:
+                            pass
+                        
+        except ImportError:
+            return False, "pywin32 не встановлено або MS Word не знайдено"
+        except MemoryError:
+            self.logger.error(f"Недостатньо пам'яті для конвертації {input_path.name}")
+            return False, "Недостатньо пам'яті для конвертації файлу"
+        except Exception as e:
+            self.logger.error(f"Помилка при конвертації {input_path.name}: {e}")
+            return False, f"Помилка конвертації DOC: {str(e)}"
+    
+    def _convert_doc_direct(
+        self, 
+        input_path: Path, 
+        output_path: Path
+    ) -> Tuple[bool, str]:
+        """Конвертація DOC без пулу (створення нового екземпляра Word).
+        
+        Args:
+            input_path: Шлях до DOC файлу
+            output_path: Шлях до вихідного PDF
+            
+        Returns:
+            Tuple[bool, str]: (успіх, повідомлення)
+        """
         word = None
         doc = None
         com_initialized = False
@@ -157,17 +264,26 @@ class DocConverter:
                 word = win32com.client.DispatchEx("Word.Application")
                 word.Visible = False
                 word.DisplayAlerts = 0  # Вимкнути всі діалоги
+                
+                # Відключення макросів для безпеки
+                try:
+                    word.AutomationSecurity = 3  # msoAutomationSecurityForceDisable
+                    self.logger.debug("Макроси відключені для безпеки")
+                except Exception as e:
+                    self.logger.warning(f"Не вдалося відключити макроси: {e}")
             except Exception as e:
                 self.logger.error(f"Не вдалося запустити MS Word: {e}")
                 return False, "MS Word не знайдено або не може бути запущений"
             
-            # Відкриття документа
+            # Відкриття документа без макросів
             try:
                 doc = word.Documents.Open(
                     str(input_path.absolute()),
                     ConfirmConversions=False,
                     ReadOnly=True,
-                    AddToRecentFiles=False
+                    AddToRecentFiles=False,
+                    NoEncodingDialog=True,
+                    OpenAndRepair=False
                 )
             except pywintypes.com_error as e:
                 self.logger.error(f"Помилка відкриття документа {input_path.name}: {e}")
@@ -195,28 +311,43 @@ class DocConverter:
             self.logger.error(f"Несподівана помилка при конвертації {input_path.name}: {e}")
             return False, f"Помилка конвертації DOC: {str(e)}"
         finally:
-            # Гарантований cleanup COM об'єктів
-            try:
-                if doc is not None:
+            # Гарантований cleanup COM об'єктів у зворотному порядку
+            cleanup_errors = []
+            
+            # Закриття документа
+            if doc is not None:
+                try:
                     doc.Close(SaveChanges=False)
-                    del doc
-                    doc = None
-            except:
-                pass
+                except Exception as e:
+                    cleanup_errors.append(f"Doc.Close: {e}")
+                finally:
+                    try:
+                        del doc
+                    except:
+                        pass
             
-            try:
-                if word is not None:
+            # Завершення Word
+            if word is not None:
+                try:
                     word.Quit()
-                    del word
-                    word = None
-            except:
-                pass
+                except Exception as e:
+                    cleanup_errors.append(f"Word.Quit: {e}")
+                finally:
+                    try:
+                        del word
+                    except:
+                        pass
             
+            # Деініціалізація COM
             if com_initialized:
                 try:
                     pythoncom.CoUninitialize()
-                except:
-                    pass
+                except Exception as e:
+                    cleanup_errors.append(f"CoUninitialize: {e}")
+            
+            # Логування помилок cleanup
+            if cleanup_errors:
+                self.logger.warning(f"Помилки cleanup COM для {input_path.name}: {'; '.join(cleanup_errors)}")
     
     def _compress_pdf(self, pdf_path: Path) -> bool:
         """Безвтратне стиснення PDF файлу з підтримкою різних рівнів.

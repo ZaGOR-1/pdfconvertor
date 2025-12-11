@@ -131,7 +131,6 @@ class FileItemWidget(ctk.CTkFrame):
                 command=lambda: on_remove(file_path)
             )
             remove_btn.grid(row=0, column=4, padx=(5, 10), pady=10)
-            remove_btn.grid(row=0, column=4, padx=(5, 10), pady=10)
         
         # Hover ефект
         self.bind("<Enter>", self._on_enter)

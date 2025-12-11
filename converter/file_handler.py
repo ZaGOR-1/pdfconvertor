@@ -11,7 +11,6 @@ import os
 import zipfile
 import shutil
 import time
-from functools import lru_cache
 
 
 class FileHandler:
@@ -27,6 +26,35 @@ class FileHandler:
     _validation_cache: Dict[str, Tuple[bool, str, float]] = {}
     
     @classmethod
+    def clear_cache(cls) -> int:
+        """Очистити кеш валідації.
+        
+        Returns:
+            Кількість видалених записів
+        """
+        count = len(cls._validation_cache)
+        cls._validation_cache.clear()
+        return count
+    
+    @classmethod
+    def get_cache_stats(cls) -> Dict[str, int]:
+        """Отримати статистику кешу.
+        
+        Returns:
+            Словник зі статистикою (size, expired)
+        """
+        current_time = time.time()
+        expired = sum(
+            1 for v in cls._validation_cache.values()
+            if current_time - v[2] > cls.CACHE_TTL_SECONDS
+        )
+        return {
+            'size': len(cls._validation_cache),
+            'expired': expired,
+            'max_size': cls.CACHE_MAX_SIZE
+        }
+    
+    @classmethod
     def set_max_file_size(cls, size_mb: int):
         """Встановити максимальний розмір файлу.
         
@@ -34,6 +62,51 @@ class FileHandler:
             size_mb: Максимальний розмір в МБ
         """
         cls.MAX_FILE_SIZE_MB = max(1, min(size_mb, 500))  # Обмеження 1-500 МБ
+    
+    @staticmethod
+    def sanitize_path(file_path: Path, base_dir: Optional[Path] = None) -> Tuple[bool, Path, str]:
+        """Санітарна обробка шляху для захисту від path traversal атак.
+        
+        Args:
+            file_path: Шлях до файлу
+            base_dir: Базова директорія (опціонально)
+            
+        Returns:
+            Tuple[bool, Path, str]: (безпечний, розв'язаний шлях, повідомлення)
+        """
+        try:
+            # Розв'язуємо абсолютний шлях (видаляє .., symlinks тощо)
+            resolved_path = file_path.resolve(strict=False)
+            
+            # Перевірка на символи, які можуть використовуватися для атак
+            path_str = str(resolved_path)
+            dangerous_patterns = ['..', '~', '$', '|', '<', '>', '"', '*', '?']
+            
+            for pattern in dangerous_patterns:
+                if pattern in path_str:
+                    return False, file_path, f"Небезпечний символ у шляху: '{pattern}'"
+            
+            # Якщо вказана базова директорія, перевіряємо чи шлях всередині неї
+            if base_dir is not None:
+                base_resolved = base_dir.resolve(strict=False)
+                try:
+                    # Перевірка, що resolved_path находиться всередині base_resolved
+                    resolved_path.relative_to(base_resolved)
+                except ValueError:
+                    return False, file_path, f"Шлях виходить за межі дозволеної директорії"
+            
+            # Перевірка на UNC шляхи (Windows network paths)
+            if path_str.startswith('\\\\'):
+                return False, file_path, "Мережеві шляхи (UNC) не дозволені"
+            
+            # Перевірка на URL-подібні шляхи
+            if '://' in path_str or path_str.startswith('file://'):
+                return False, file_path, "URL-шляхи не дозволені"
+            
+            return True, resolved_path, "OK"
+            
+        except Exception as e:
+            return False, file_path, f"Помилка валідації шляху: {str(e)}"
     
     @staticmethod
     def is_word_file(file_path: Path) -> bool:
@@ -115,6 +188,14 @@ class FileHandler:
         Returns:
             Tuple[bool, str]: (валідний, повідомлення про помилку)
         """
+        # Санітарна обробка шляху (захист від path traversal)
+        is_safe, sanitized_path, msg = FileHandler.sanitize_path(file_path)
+        if not is_safe:
+            return False, msg
+        
+        # Використовуємо санітарний шлях далі
+        file_path = sanitized_path
+        
         # Перевірка кешу (ключ: шлях + mtime)
         if use_cache:
             try:

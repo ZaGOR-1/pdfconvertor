@@ -14,7 +14,8 @@ class Logger:
     """Singleton клас для логування подій програми."""
     
     _instance = None
-    _log_dir = Path("logs")
+    # Використовуємо абсолютний шлях відносно основного файлу
+    _log_dir = Path(__file__).parent.parent / "logs"
     _log_file = "converter.log"
     
     def __new__(cls):
@@ -101,22 +102,34 @@ class Logger:
             backup_count=backup_count or 5
         )
     
-    def debug(self, message: str):
-        """Лог на рівні DEBUG."""
+    def debug(self, message: str) -> None:
+        """Лог на рівні DEBUG.
+        
+        Args:
+            message: Повідомлення для логування
+        """
         if self._logger:
             self._logger.debug(message)
     
-    def info(self, message: str):
-        """Лог на рівні INFO."""
+    def info(self, message: str) -> None:
+        """Лог на рівні INFO.
+        
+        Args:
+            message: Повідомлення для логування
+        """
         if self._logger:
             self._logger.info(message)
     
-    def warning(self, message: str):
-        """Лог на рівні WARNING."""
+    def warning(self, message: str) -> None:
+        """Лог на рівні WARNING.
+        
+        Args:
+            message: Повідомлення для логування
+        """
         if self._logger:
             self._logger.warning(message)
     
-    def error(self, message: str, exc_info: bool = False):
+    def error(self, message: str, exc_info: bool = False) -> None:
         """
         Лог на рівні ERROR.
         
@@ -127,7 +140,7 @@ class Logger:
         if self._logger:
             self._logger.error(message, exc_info=exc_info)
     
-    def critical(self, message: str, exc_info: bool = False):
+    def critical(self, message: str, exc_info: bool = False) -> None:
         """
         Лог на рівні CRITICAL.
         
@@ -138,15 +151,25 @@ class Logger:
         if self._logger:
             self._logger.critical(message, exc_info=exc_info)
     
-    def log_conversion_start(self, file_path: str, output_path: str):
-        """Лог початку конвертації файлу."""
+    def log_conversion_start(self, file_path: str, output_path: str) -> None:
+        """Лог початку конвертації файлу.
+        
+        Args:
+            file_path: Шлях до вхідного файлу
+            output_path: Шлях до вихідного файлу
+        """
         self.info(f"Початок конвертації: {file_path} → {output_path}")
     
-    def log_conversion_success(self, file_path: str, duration: float):
-        """Лог успішної конвертації."""
+    def log_conversion_success(self, file_path: str, duration: float) -> None:
+        """Лог успішної конвертації.
+        
+        Args:
+            file_path: Шлях до файлу
+            duration: Тривалість в секундах
+        """
         self.info(f"✅ Успішно конвертовано: {file_path} (за {duration:.2f}s)")
     
-    def log_conversion_error(self, file_path: str, error: str):
+    def log_conversion_error(self, file_path: str, error: str) -> None:
         """Лог помилки конвертації."""
         self.error(f"❌ Помилка конвертації {file_path}: {error}")
     
